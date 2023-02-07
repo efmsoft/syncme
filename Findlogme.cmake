@@ -6,7 +6,7 @@ macro(FindLogme)
 
     if(EXISTS ${folder}/logme AND EXISTS ${folder}/logme/logme)
       message("Found logme library: ${folder}/logme")
-      set(LOGME_ROOT ${folder})
+      set(LOGME_ROOT ${folder}/logme)
       break()
     endif()
 
@@ -15,24 +15,54 @@ macro(FindLogme)
       break()
     endif()
 
+    set(previous ${folder})
     cmake_path(GET folder PARENT_PATH folder)
+
+    if(folder STREQUAL previous)
+      break()
+    endif()
   endwhile()
 endmacro()
 
-FindLogme()
-
 set(USE_LOGME OFF)
-if(NOT LOGME_ROOT STREQUAL "")
-  if(ENABLE_LOGME)
-    set(USE_LOGME ON)
-    add_definitions(-DUSE_LOGME)
-    set(LOGME_INCLUDE_DIR "${LOGME_ROOT}/logme/logme/include")
+set(LOGME_ROOT "")
 
-    message("Enable logme usage")
-    message("LOGME_INCLUDE_DIR=${LOGME_INCLUDE_DIR}")
+if(ENABLE_LOGME)
+  FindLogme()
+
+  if(LOGME_ROOT STREQUAL "")
+    set(LOGME_ROOT "${CMAKE_CURRENT_LIST_DIR}/out/logme")
+    if(NOT EXISTS LOGME_ROOT)
+      include(FetchContent)
+      FetchContent_Declare(logme
+        GIT_REPOSITORY "https://github.com/efmsoft/logme.git"
+        GIT_TAG "main"
+        SOURCE_SUBDIR logme
+        SOURCE_DIR "${LOGME_ROOT}"
+      )
+      FetchContent_MakeAvailable(logme)
+    endif()
   endif()
 endif()
 
-if(NOT USE_LOGME)
+if(NOT LOGME_ROOT STREQUAL "")
+  set(USE_LOGME ON)
+  set(LOGME_INCLUDE_DIR "${LOGME_ROOT}/logme/include")
+
+  add_compile_definitions(USE_LOGME)
+  include_directories(syncme PUBLIC
+    ${LOGME_INCLUDE_DIR}
+  )
+
+  set_target_properties(logme PROPERTIES FOLDER "Dependencies")
+
+  message("Enable logme usage")
+  message("LOGME_INCLUDE_DIR=${LOGME_INCLUDE_DIR}")
+else()
+  set(USE_LOGME OFF)
   message("Disable logme usage")
+endif()
+
+if(USE_LOGME)
+  set(LOGME_LIB logme)
 endif()

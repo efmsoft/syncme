@@ -1,7 +1,7 @@
 file(GLOB_RECURSE SOURCES RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "*.c*" "*.h") 
 add_executable(thread_pool_test ${SOURCES})
 
-target_link_libraries(thread_pool_test LINK_PUBLIC gtest_main syncme logme allstat)
+target_link_libraries(thread_pool_test LINK_PUBLIC gtest_main syncme ${LOGME_LIB} ${ALLSTAT_LIB})
 
 include(GoogleTest)
 gtest_discover_tests(thread_pool_test)

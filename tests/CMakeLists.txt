@@ -28,7 +28,10 @@ FetchContent_Declare(
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
-add_subdirectory(sockets_test)
+if(USE_LOGME)
+  add_subdirectory(sockets_test)
+endif()
+
 add_subdirectory(sync_test)
 add_subdirectory(thread_pool_test)
 
