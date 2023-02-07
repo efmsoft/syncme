@@ -9,6 +9,8 @@ target_include_directories(syncme PUBLIC
   ${OPENSSL_INCLUDE_DIR}
 )
 
+target_compile_definitions(syncme PRIVATE SYNCME_BUILD)
+
 if(USE_ALLSTAT)
   target_compile_definitions(syncme PUBLIC USE_ALLSTAT)
 endif()

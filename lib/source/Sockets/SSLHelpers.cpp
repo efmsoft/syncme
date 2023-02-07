@@ -203,7 +203,7 @@ static std::string Lookup(STRINT_PAIR* t, int v)
 
 #define CASE_AND_RET(v) case v: return #v
 
-std::string SSLProtocolName(int version)
+std::string Syncme::SSLProtocolName(int version)
 {
   switch (version)
   {
@@ -220,7 +220,7 @@ std::string SSLProtocolName(int version)
   return std::to_string(version);
 }
 
-std::string SSLContentType(int content_type)
+std::string Syncme::SSLContentType(int content_type)
 {
   switch (content_type)
   {
@@ -234,7 +234,7 @@ std::string SSLContentType(int content_type)
   return std::to_string(content_type);
 }
 
-std::string SSLPacketDescr(
+std::string Syncme::SSLPacketDescr(
   int version
   , int content_type
   , const void* buf
@@ -275,27 +275,27 @@ std::string SSLPacketDescr(
   return str;
 }
 
-std::string TlsExtType(int type)
+std::string Syncme::TlsExtType(int type)
 {
   return Lookup(tlsext_types, type);
 }
 
-std::string SecurityCallbackType(int type)
+std::string Syncme::SecurityCallbackType(int type)
 {
   return Lookup(callback_types, type);
 }
 
-std::string Tls13Scheme(int type)
+std::string Syncme::Tls13Scheme(int type)
 {
   return Lookup(signature_tls13_scheme_list, type);
 }
 
-std::string Tls12Alg(int type)
+std::string Syncme::Tls12Alg(int type)
 {
   return Lookup(signature_tls12_alg_list, type);
 }
 
-std::string Tls12Hash(int type)
+std::string Syncme::Tls12Hash(int type)
 {
   return Lookup(signature_tls12_hash_list, type);
 }
@@ -317,7 +317,7 @@ static STRINT_PAIR ssl_errors[] =
   {"SSL_ERROR_WANT_RETRY_VERIFY", SSL_ERROR_WANT_RETRY_VERIFY},
 };
 
-std::string SslError(int code)
+std::string Syncme::SslError(int code)
 {
   std::string str = Lookup(ssl_errors, code);
 
@@ -327,7 +327,7 @@ std::string SslError(int code)
   return str;
 }
 
-std::string GetBioError()
+std::string Syncme::GetBioError()
 {
 #ifdef _WIN32
   int e = GetLastError();
