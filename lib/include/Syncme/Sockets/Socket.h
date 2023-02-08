@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-#include <Syncme/Logger/Log.h>
+#include <Syncme/Logger/Channel.h>
 #include <Syncme/Sockets/ErrorLimit.h>
 #include <Syncme/Sync.h>
 

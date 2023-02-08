@@ -1,9 +1,10 @@
 #include <cassert>
 
-#include <Syncme/TickCount.h>
+#include <Syncme/Logger/Log.h>
 #include <Syncme/Sockets/BIOSocket.h>
 #include <Syncme/Sockets/SocketPair.h>
 #include <Syncme/Sockets/SSLSocket.h>
+#include <Syncme/TickCount.h>
 
 using namespace Syncme;
 

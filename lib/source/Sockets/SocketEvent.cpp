@@ -42,7 +42,7 @@ SocketEvent::SocketEvent(int socket, int mask)
 
   if (WSAEventSelect((SOCKET)Socket, WSAEvent, events))
   {
-    LogEwsa("WSAEventSelect failed");
+    LogosE("WSAEventSelect failed");
   }
   else
   {
@@ -57,7 +57,7 @@ SocketEvent::SocketEvent(int socket, int mask)
 
     if (!f)
     {
-      LogEwsa("RegisterWaitForSingleObject failed");
+      LogosE("RegisterWaitForSingleObject failed");
     }
   }
 #endif
@@ -86,7 +86,7 @@ SocketEvent::~SocketEvent()
 
     if (!f)
     {
-      LogEwsa("UnregisterWaitEx failed");
+      LogosE("UnregisterWaitEx failed");
     }
     else
     {
@@ -282,7 +282,7 @@ void SocketEvent::Callback(bool timerOrWaitFired)
 
     if (e)
     {
-      LogEwsa("WSAEnumNetworkEvents failed");
+      LogosE("WSAEnumNetworkEvents failed");
     }
     else
     {

@@ -1,5 +1,6 @@
 #include <cassert>
 
+#include <Syncme/Logger/Log.h>
 #include <Syncme/Sleep.h>
 #include <Syncme/Sockets/API.h>
 #include <Syncme/Sockets/Socket.h>
@@ -132,7 +133,7 @@ bool Socket::SetOptions()
   {
     if (setsockopt(Handle, SOL_SOCKET, SO_RCVBUF, (char*)&rcvsize, sizeof(rcvsize)))
     {
-      LogEwsa("setsockopt(SO_RCVBUF) failed");
+      LogosE("setsockopt(SO_RCVBUF) failed");
       return false;
     }
 
@@ -144,7 +145,7 @@ bool Socket::SetOptions()
   {
     if (setsockopt(Handle, SOL_SOCKET, SO_SNDBUF, (char*)&sndsize, sizeof(sndsize)))
     {
-      LogEwsa("setsockopt(SO_SNDBUF) failed");
+      LogosE("setsockopt(SO_SNDBUF) failed");
       return false;
     }
 
@@ -156,7 +157,7 @@ bool Socket::SetOptions()
     int yes = 1;
     if (setsockopt(Handle, IPPROTO_TCP, TCP_NODELAY, (char*)&yes, sizeof(yes)))
     {
-      LogEwsa("setsockopt(TCP_NODELAY) failed");
+      LogosE("setsockopt(TCP_NODELAY) failed");
       return false;
     }
   }
@@ -193,7 +194,7 @@ bool Socket::SwitchToUnblockingMode()
     int e = ioctlsocket(Handle, (int)FIONBIO, &on);
     if (e == -1)
     {
-      LogEwsa("ioctlsocket(FIONBIO) failed");
+      LogosE("ioctlsocket(FIONBIO) failed");
       return false;
     }
   }
@@ -359,13 +360,13 @@ bool Socket::InitPeer()
   cb = sizeof(addr6);
   if (getpeername(Handle, (sockaddr*)&addr6, &cb) == -1)
   {
-    LogEwsa("getpeername failed");
+    LogosE("getpeername failed");
     return false;
   }
 
   if (inet_ntop(AF_INET6, &addr6.sin6_addr, saddr6, INET6_ADDRSTRLEN) == nullptr)
   {
-    LogEwsa("inet_ntop() failed");
+    LogosE("inet_ntop() failed");
     return false;
   }
 
@@ -410,7 +411,7 @@ bool Socket::PeerFromHostString(
   int rc = getaddrinfo(name, p.c_str(), &hints, &servinfo);
   if (rc)
   {
-    LogEwsa("getaddrinfo() failed");
+    LogosE("getaddrinfo() failed");
     return false;
   }
 

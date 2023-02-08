@@ -5,7 +5,7 @@
 #include <openssl/ssl.h>
 
 #include <Syncme/Config/Config.h>
-#include <Syncme/Logger/Log.h>
+#include <Syncme/Logger/Channel.h>
 #include <Syncme/Sockets/Socket.h>
 #include <Syncme/Sync.h>
 #include <Syncme/TimePoint.h>

@@ -6,6 +6,7 @@
 #include <fcntl.h>
 #endif
 
+#include <Syncme/Logger/Log.h>
 #include <Syncme/Sockets/API.h>
 #include <Syncme/Sockets/Counter.h>
 #include <Syncme/Sockets/SocketEventQueue.h>
@@ -24,7 +25,7 @@ SocketEventQueue::SocketEventQueue(int& rc, unsigned minPort, unsigned maxPort)
   : EvStop(CreateNotificationEvent())
   , EvGrowDone(CreateNotificationEvent())
 #ifndef _WIN32
-  , Poll(-1)  
+  , Poll(-1)
   , ControlSocket(-1)
   , Port(0)
   , Events(size_t(OPTIONS::GROW_SIZE))
@@ -48,20 +49,20 @@ SocketEventQueue::SocketEventQueue(int& rc, unsigned minPort, unsigned maxPort)
   Poll = epoll_create(1);
   if (Poll == -1)
   {
-    LogmeEwsa("epoll_create failed");
+    LogEwsa("epoll_create failed");
     return;
   }
 
   ControlSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
   if (ControlSocket == -1)
   {
-    LogmeEwsa("unable to create ControlSocket socket");
+    LogEwsa("unable to create ControlSocket socket");
     return;
   }
-  
+
   if (fcntl(ControlSocket, F_SETFL, O_NONBLOCK) == -1)
   {
-    LogmeEwsa("epoll_ctl(EPOLL_CTL_ADD) failed for ControlSocket");
+    LogEwsa("epoll_ctl(EPOLL_CTL_ADD) failed for ControlSocket");
     return;
   }
 
@@ -77,7 +78,7 @@ SocketEventQueue::SocketEventQueue(int& rc, unsigned minPort, unsigned maxPort)
 
   if (epoll_ctl(Poll, EPOLL_CTL_ADD, ControlSocket, &ev) == -1)
   {
-    LogmeEwsa("epoll_ctl(EPOLL_CTL_ADD) failed for ControlSocket");
+    LogEwsa("epoll_ctl(EPOLL_CTL_ADD) failed for ControlSocket");
     return;
   }
 #endif  
@@ -97,7 +98,7 @@ SocketEventQueue::~SocketEventQueue()
     ev.events |= EPOLLIN;
     if (epoll_ctl(Poll, EPOLL_CTL_DEL, ControlSocket, &ev) == -1)
     {
-      LogmeEwsa("epoll_ctl(EPOLL_CTL_DEL) failed for ControlSocket");
+      LogEwsa("epoll_ctl(EPOLL_CTL_DEL) failed for ControlSocket");
     }
   }
 
@@ -105,7 +106,7 @@ SocketEventQueue::~SocketEventQueue()
   {
     if (close(Poll) == -1)
     {
-      LogmeEwsa("close(Poll) failed");
+      LogEwsa("close(Poll) failed");
     }
 
     Poll = -1;
@@ -115,7 +116,7 @@ SocketEventQueue::~SocketEventQueue()
   {
     if (close(ControlSocket) == -1)
     {
-      LogmeEwsa("close(ControlSocket) failed");
+      LogEwsa("close(ControlSocket) failed");
     }
 
     ControlSocket = -1;
@@ -155,12 +156,12 @@ int SocketEventQueue::SendToSelf(const void* data, uint32_t size)
   addr.sin_port = htons(Port);
 
   return SendTo(&addr, data, size);
-} 
+}
 
 int SocketEventQueue::SendTo(const sockaddr_in* addr, const void* data, uint32_t size)
 {
   return sendto(ControlSocket, (char*)data, size, 0, (sockaddr*)addr, sizeof(sockaddr_in));
-} 
+}
 #endif
 
 void SocketEventQueue::Stop()
@@ -183,7 +184,7 @@ void SocketEventQueue::Stop()
     int e = SendToSelf(CMD_EXIT, strlen(CMD_EXIT));
     if (e == -1)
     {
-      LogmeEwsa("Failed to send @stop command");
+      LogEwsa("Failed to send @stop command");
     }
 #endif
 
@@ -204,7 +205,7 @@ SocketEventQueue::ADD_EVENT_RESULT SocketEventQueue::Append(SocketEvent* socketE
   // One entry is used for ControlSocket
   size_t numEvents = Queue.size() + 1;
   size_t pollList = Events.size();
-  
+
   if (numEvents + 1 <= pollList)
   {
     // epoll_wait(2) — Linux manual page:
@@ -220,12 +221,12 @@ SocketEventQueue::ADD_EVENT_RESULT SocketEventQueue::Append(SocketEvent* socketE
 
     if (epoll_ctl(Poll, EPOLL_CTL_ADD, socketEvent->Socket, &ev) == -1)
     {
-      LogmeEwsa("epoll_ctl(EPOLL_CTL_ADD) failed");
+      LogEwsa("epoll_ctl(EPOLL_CTL_ADD) failed");
       return ADD_EVENT_RESULT::FAILED;
     }
 
     Queue.push_back(socketEvent);
-    
+
     if (Thread == nullptr)
       Thread = std::make_shared<std::jthread>(&SocketEventQueue::Worker, this);
 
@@ -238,7 +239,7 @@ SocketEventQueue::ADD_EVENT_RESULT SocketEventQueue::Append(SocketEvent* socketE
   int e = SendToSelf(CMD_GROW, strlen(CMD_GROW));
   if (e == -1)
   {
-    LogmeEwsa("Failed to send @grow command");
+    LogEwsa("Failed to send @grow command");
     return ADD_EVENT_RESULT::FAILED;
   }
 
@@ -298,8 +299,8 @@ bool SocketEventQueue::RemoveSocketEvent(SocketEvent* socketEvent)
   // event.
   if (epoll_ctl(Poll, EPOLL_CTL_DEL, socket, &ev) == -1)
   {
-    LogmeEwsa("epoll_ctl(EPOLL_CTL_DEL) failed");
-    return false; 
+    LogEwsa("epoll_ctl(EPOLL_CTL_DEL) failed");
+    return false;
   }
 
   return true;
@@ -352,7 +353,7 @@ bool SocketEventQueue::ProcessEvents(int n)
       int cb = read(ControlSocket, buffer, sizeof(buffer));
       if (cb == -1)
       {
-        LogmeEwsa("Failed to read control socket");
+        LogEwsa("Failed to read control socket");
       }
       else
         command = std::string(buffer, cb);
@@ -407,7 +408,7 @@ void SocketEventQueue::Worker()
 
     if (n < 0)
     {
-      LogmeEwsa("epoll_wait failed");
+      LogEwsa("epoll_wait failed");
       break;
     }
 

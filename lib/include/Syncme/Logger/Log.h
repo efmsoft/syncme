@@ -3,32 +3,18 @@
 #ifdef USE_LOGME
   #include <Logme/Logme.h>
 
-  namespace Syncme
-  {
-    typedef Logme::ID CHANNEL;
-  }
+  #define LogD LogmeD
+  #define LogI LogmeI
+  #define LogW LogmeW
+  #define LogE LogmeE
+
+  #define LogosE(format) \
+      {LogmeE(format ". Error: %s", OSERR2);}
 #else
-  namespace Syncme
-  {
-    typedef int CHANNEL;
-  }
-#endif
+  #define LogD(...)
+  #define LogI(...)
+  #define LogW(...)
+  #define LogE(...)
 
-#ifdef SYNCME_BUILD
-  #ifdef USE_LOGME
-    #define LogD LogmeD
-    #define LogI LogmeI
-    #define LogW LogmeW
-    #define LogE LogmeE
-
-    #define LogEwsa(format) \
-        {LogmeE(format ". Error: %s", OSERR2);}
-  #else
-    #define LogD(...)
-    #define LogI(...)
-    #define LogW(...)
-    #define LogE(...)
-
-    #define LogEwsa(format)
-  #endif
+  #define LogosE(format)
 #endif

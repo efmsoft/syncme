@@ -1,5 +1,6 @@
 #include <cassert>
 
+#include <Syncme/Logger/Log.h>
 #include <Syncme/Sockets/SocketPair.h>
 #include <Syncme/Sockets/SSLHelpers.h>
 #include <Syncme/Sockets/SSLSocket.h>
