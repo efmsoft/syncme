@@ -92,14 +92,14 @@ static void listener_thread(
   int h = (int)socket(AF_INET, SOCK_STREAM, 0);
   if (h == -1)
   {
-    LogEwsa("socket(SOCK_STREAM) failed");
+    LogosE("socket(SOCK_STREAM) failed");
     exit(1);
   }
 
   int reuse = 1;
   if (setsockopt(h, SOL_SOCKET, SO_REUSEADDR, (const char*)&reuse, sizeof(reuse)) < 0)
   {
-    LogEwsa("setsockopt(SO_REUSEADDR) failed");
+    LogosE("setsockopt(SO_REUSEADDR) failed");
     exit(1);
   }
 
@@ -108,7 +108,7 @@ static void listener_thread(
   lin.l_linger = 0;
   if (setsockopt(h, SOL_SOCKET, SO_LINGER, (const char*)&lin, sizeof(lin)) < 0)
   {
-    LogEwsa("setsockopt(SO_LINGER) failed");
+    LogosE("setsockopt(SO_LINGER) failed");
     exit(1);
   }
 
@@ -119,14 +119,14 @@ static void listener_thread(
   int rc = bind(h, (struct sockaddr*)&addr, sizeof(addr));
   if (rc == -1)
   {
-    LogEwsa("bind() failed");
+    LogosE("bind() failed");
     exit(1);
   }
 
   rc = listen(h, 1);
   if (rc == -1)
   {
-    LogEwsa("listen() failed");
+    LogosE("listen() failed");
     exit(1);
   }
 
@@ -142,7 +142,7 @@ static void listener_thread(
     int client = (int)accept(h, (sockaddr*)&peer, &len);
     if (client == -1)
     {
-      LogEwsa("accept() failed");
+      LogosE("accept() failed");
       exit(1);
     }
 
@@ -168,7 +168,7 @@ static void client_thread(HEvent& exitEvent, size_t index)
   int h = (int)socket(AF_INET, SOCK_STREAM, 0);
   if (h == -1)
   {
-    LogEwsa("socket(SOCK_STREAM) failed");
+    LogosE("socket(SOCK_STREAM) failed");
     exit(1);
   }
 
@@ -179,7 +179,7 @@ static void client_thread(HEvent& exitEvent, size_t index)
   int rc = connect(h, (sockaddr*)&addr, sizeof(addr));
   if (rc == -1)
   {
-    LogEwsa("connect() failed");
+    LogosE("connect() failed");
     exit(1);
   }
 
@@ -244,7 +244,7 @@ TEST(EventQueue, Grow)
     , std::ref(pool)
     , readyEvent
     , completeEvent
-  );
+    );
 
   WaitForSingleObject(readyEvent);
 

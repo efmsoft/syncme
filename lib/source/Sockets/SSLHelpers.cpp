@@ -118,7 +118,7 @@ static STRINT_PAIR tlsext_types[] = {
   {NULL}
 };
 
-static STRINT_PAIR callback_types[] = 
+static STRINT_PAIR callback_types[] =
 {
   {"Supported Ciphersuite", SSL_SECOP_CIPHER_SUPPORTED},
   {"Shared Ciphersuite", SSL_SECOP_CIPHER_SHARED},
@@ -148,27 +148,27 @@ static STRINT_PAIR callback_types[] =
 static STRINT_PAIR signature_tls13_scheme_list[] = {
   {"rsa_pkcs1_sha1",         0x0201 /* TLSEXT_SIGALG_rsa_pkcs1_sha1 */},
   {"ecdsa_sha1",             0x0203 /* TLSEXT_SIGALG_ecdsa_sha1 */},
-/*  {"rsa_pkcs1_sha224",       0x0301    TLSEXT_SIGALG_rsa_pkcs1_sha224}, not in rfc8446 */
-/*  {"ecdsa_sha224",           0x0303    TLSEXT_SIGALG_ecdsa_sha224}      not in rfc8446 */
-  {"rsa_pkcs1_sha256",       0x0401 /* TLSEXT_SIGALG_rsa_pkcs1_sha256 */},
-  {"ecdsa_secp256r1_sha256", 0x0403 /* TLSEXT_SIGALG_ecdsa_secp256r1_sha256 */},
-  {"rsa_pkcs1_sha384",       0x0501 /* TLSEXT_SIGALG_rsa_pkcs1_sha384 */},
-  {"ecdsa_secp384r1_sha384", 0x0503 /* TLSEXT_SIGALG_ecdsa_secp384r1_sha384 */},
-  {"rsa_pkcs1_sha512",       0x0601 /* TLSEXT_SIGALG_rsa_pkcs1_sha512 */},
-  {"ecdsa_secp521r1_sha512", 0x0603 /* TLSEXT_SIGALG_ecdsa_secp521r1_sha512 */},
-  {"rsa_pss_rsae_sha256",    0x0804 /* TLSEXT_SIGALG_rsa_pss_rsae_sha256 */},
-  {"rsa_pss_rsae_sha384",    0x0805 /* TLSEXT_SIGALG_rsa_pss_rsae_sha384 */},
-  {"rsa_pss_rsae_sha512",    0x0806 /* TLSEXT_SIGALG_rsa_pss_rsae_sha512 */},
-  {"ed25519",                0x0807 /* TLSEXT_SIGALG_ed25519 */},
-  {"ed448",                  0x0808 /* TLSEXT_SIGALG_ed448 */},
-  {"rsa_pss_pss_sha256",     0x0809 /* TLSEXT_SIGALG_rsa_pss_pss_sha256 */},
-  {"rsa_pss_pss_sha384",     0x080a /* TLSEXT_SIGALG_rsa_pss_pss_sha384 */},
-  {"rsa_pss_pss_sha512",     0x080b /* TLSEXT_SIGALG_rsa_pss_pss_sha512 */},
-  {"gostr34102001",          0xeded /* TLSEXT_SIGALG_gostr34102001_gostr3411 */},
-  {"gostr34102012_256",      0xeeee /* TLSEXT_SIGALG_gostr34102012_256_gostr34112012_256 */},
-  {"gostr34102012_512",      0xefef /* TLSEXT_SIGALG_gostr34102012_512_gostr34112012_512 */},
-  {NULL}
-}; 
+  /*  {"rsa_pkcs1_sha224",       0x0301    TLSEXT_SIGALG_rsa_pkcs1_sha224}, not in rfc8446 */
+  /*  {"ecdsa_sha224",           0x0303    TLSEXT_SIGALG_ecdsa_sha224}      not in rfc8446 */
+    {"rsa_pkcs1_sha256",       0x0401 /* TLSEXT_SIGALG_rsa_pkcs1_sha256 */},
+    {"ecdsa_secp256r1_sha256", 0x0403 /* TLSEXT_SIGALG_ecdsa_secp256r1_sha256 */},
+    {"rsa_pkcs1_sha384",       0x0501 /* TLSEXT_SIGALG_rsa_pkcs1_sha384 */},
+    {"ecdsa_secp384r1_sha384", 0x0503 /* TLSEXT_SIGALG_ecdsa_secp384r1_sha384 */},
+    {"rsa_pkcs1_sha512",       0x0601 /* TLSEXT_SIGALG_rsa_pkcs1_sha512 */},
+    {"ecdsa_secp521r1_sha512", 0x0603 /* TLSEXT_SIGALG_ecdsa_secp521r1_sha512 */},
+    {"rsa_pss_rsae_sha256",    0x0804 /* TLSEXT_SIGALG_rsa_pss_rsae_sha256 */},
+    {"rsa_pss_rsae_sha384",    0x0805 /* TLSEXT_SIGALG_rsa_pss_rsae_sha384 */},
+    {"rsa_pss_rsae_sha512",    0x0806 /* TLSEXT_SIGALG_rsa_pss_rsae_sha512 */},
+    {"ed25519",                0x0807 /* TLSEXT_SIGALG_ed25519 */},
+    {"ed448",                  0x0808 /* TLSEXT_SIGALG_ed448 */},
+    {"rsa_pss_pss_sha256",     0x0809 /* TLSEXT_SIGALG_rsa_pss_pss_sha256 */},
+    {"rsa_pss_pss_sha384",     0x080a /* TLSEXT_SIGALG_rsa_pss_pss_sha384 */},
+    {"rsa_pss_pss_sha512",     0x080b /* TLSEXT_SIGALG_rsa_pss_pss_sha512 */},
+    {"gostr34102001",          0xeded /* TLSEXT_SIGALG_gostr34102001_gostr3411 */},
+    {"gostr34102012_256",      0xeeee /* TLSEXT_SIGALG_gostr34102012_256_gostr34112012_256 */},
+    {"gostr34102012_512",      0xefef /* TLSEXT_SIGALG_gostr34102012_512_gostr34112012_512 */},
+    {NULL}
+};
 
 /* from rfc5246 7.4.1.4.1. */
 static STRINT_PAIR signature_tls12_alg_list[] = {
@@ -251,7 +251,7 @@ std::string Syncme::SSLPacketDescr(
     || version == TLS1_3_VERSION
     || version == DTLS1_VERSION
     || version == DTLS1_BAD_VER
-  )
+    )
   {
     if (content_type == SSL3_RT_ALERT)
     {
@@ -262,7 +262,7 @@ std::string Syncme::SSLPacketDescr(
           str += "warning ";
         else if (bp[0] == 2)
           str += "fatal ";
-        
+
         str += Lookup(alert_types, bp[1]);
       }
     }
@@ -300,7 +300,7 @@ std::string Syncme::Tls12Hash(int type)
   return Lookup(signature_tls12_hash_list, type);
 }
 
-static STRINT_PAIR ssl_errors[] = 
+static STRINT_PAIR ssl_errors[] =
 {
   {"SSL_ERROR_NONE", SSL_ERROR_NONE},
   {"SSL_ERROR_SSL", SSL_ERROR_SSL},
@@ -341,7 +341,7 @@ std::string Syncme::GetBioError()
 
   std::string errorString(buffer, len);
 
-#ifdef USE_LOGME
+#if defined(USE_LOGME) && defined(_WIN32)
   if (errorString.empty())
     errorString = LRESULT_STR(e);
 #endif    
