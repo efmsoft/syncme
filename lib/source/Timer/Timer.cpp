@@ -17,5 +17,5 @@ Timer::~Timer()
 
 void Timer::Set(long dueTime)
 {
-  NextDueTime = GetTimeInMillisec() + Period;
+  NextDueTime = GetTimeInMillisec() + dueTime;
 }

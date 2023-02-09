@@ -54,5 +54,6 @@ enable_testing()
 add_subdirectory(lib ../out/Static)
 
 if(ENABLE_LOGME AND TARGET logme)
+  add_subdirectory(examples ../out/Examples)
   add_subdirectory(tests ../out/Tests)
 endif()
