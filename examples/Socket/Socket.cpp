@@ -72,13 +72,16 @@ void Server(HEvent readyEvent)
     exit(1);
   }
 
-  HEvent e = CreateSocketEvent(client, EVENT_READ);
+  HEvent e = CreateSocketEvent(client, EVENT_READ | EVENT_CLOSE);
 
   // Now client socket in non-blocking mode. We have to wait for EVENT_READ
   // before recv() call
 
   auto wr = WaitForSingleObject(e);
   assert(wr == WAIT_RESULT::OBJECT_0);
+
+  int mask = GetSocketEvents(e);
+  assert(mask & EVENT_READ);
 
   char buf[256]{};
   if (recv(client, buf, sizeof(buf), 0) == -1)
