@@ -1,0 +1,3 @@
+# Timer example
+
+This example demonstrates the use of watable timers and functions to wait for signaled state of objects (**WaitForMultipleObjects**). Three objects are created: a timer that goes into the signaled state after 3 seconds, a timer that goes into the signaled state after 7 seconds, and an event that is already initially in the signaled state. The **WaitForMultipleObjects** function waits for the signaled state of all objects (because the second parameter **waitAll**=true). Thus, the wait ends after 7 seconds. The example also shows the use of the **TimePoint** object

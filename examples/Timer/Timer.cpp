@@ -13,7 +13,7 @@ int main()
 
   TimePoint t0;
   SetWaitableTimer(timer1, 3000, 0, [t0](HEvent h) { printf("timer1 signalled after %llu ms\n", t0.ElapsedSince()); });
-  SetWaitableTimer(timer2, 7000, 0, [t0](HEvent h) { printf("timer2 signalled after %llu ms\n", t0.ElapsedSince());  });
+  SetWaitableTimer(timer2, 7000, 0, [t0](HEvent h) { printf("timer2 signalled after %llu ms\n", t0.ElapsedSince()); });
 
   EventArray ev(timer1, timer2, event3);
   auto rc = WaitForMultipleObjects(ev, true);
