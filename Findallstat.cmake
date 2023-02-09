@@ -28,7 +28,9 @@ set(USE_ALLSTAT OFF)
 set(ALLSTAT_ROOT "")
 
 if(ENABLE_ALLSTAT)
-  FindAllStat()
+  if(NOT FORCE_FETCH)
+    FindAllStat()
+  endif()
 
   if(ALLSTAT_ROOT STREQUAL "")
     set(ALLSTAT_ROOT "${CMAKE_CURRENT_LIST_DIR}/out/allstat")
@@ -54,7 +56,9 @@ if(NOT ALLSTAT_ROOT STREQUAL "")
     ${ALLSTAT_INCLUDE_DIR}
   )
 
-  set_target_properties(allstat PROPERTIES FOLDER "Dependencies")
+  if(TARGET allstat)
+    set_target_properties(allstat PROPERTIES FOLDER "Dependencies")
+  endif()
 
   message("Enable allstat usage")
   message("ALLSTAT_INCLUDE_DIR=${ALLSTAT_INCLUDE_DIR}")

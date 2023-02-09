@@ -27,8 +27,23 @@ if (${CMAKE_BUILD_TYPE} STREQUAL Debug)
   set_directory_properties(PROPERTIES COMPILE_DEFINITIONS "_DEBUG")
 endif ()
 
-set(ENABLE_ALLSTAT OFF)
-set(ENABLE_LOGME OFF)
+# Set to ON if we should clone dependencies in a temporary folder
+#
+# In case of OFF we are trying to find dependencies in the parent folders. It can work much
+# faster if all submodules of a big project placed to the same directory (for example, Modules
+# subdirectory of the project). In this case we will have directory structure like this
+# / 
+#   Modules
+#          allstat
+#          logme
+#          syncme
+#              CMakeLists.txt   - this file
+# 
+# FindXXX.cmake will locate dependency. But it can cause problems in case of version conflict
+set(FORCE_FETCH ON)
+
+set(ENABLE_ALLSTAT ON)
+set(ENABLE_LOGME ON)
 set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR})
 
 find_package(allstat MODULE)
@@ -37,4 +52,7 @@ find_package(OpenSSL REQUIRED)
 
 enable_testing()
 add_subdirectory(lib ../out/Static)
-add_subdirectory(tests ../out/Tests)
+
+if(ENABLE_LOGME AND TARGET logme)
+  add_subdirectory(tests ../out/Tests)
+endif()

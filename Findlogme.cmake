@@ -28,7 +28,9 @@ set(USE_LOGME OFF)
 set(LOGME_ROOT "")
 
 if(ENABLE_LOGME)
-  FindLogme()
+  if(NOT FORCE_FETCH)
+    FindLogme()
+  endif()
 
   if(LOGME_ROOT STREQUAL "")
     set(LOGME_ROOT "${CMAKE_CURRENT_LIST_DIR}/out/logme")
@@ -54,7 +56,9 @@ if(NOT LOGME_ROOT STREQUAL "")
     ${LOGME_INCLUDE_DIR}
   )
 
-  set_target_properties(logme PROPERTIES FOLDER "Dependencies")
+  if(TARGET logme)
+    set_target_properties(logme PROPERTIES FOLDER "Dependencies")
+  endif()
 
   message("Enable logme usage")
   message("LOGME_INCLUDE_DIR=${LOGME_INCLUDE_DIR}")
