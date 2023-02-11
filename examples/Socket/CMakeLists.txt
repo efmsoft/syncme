@@ -3,7 +3,7 @@ if(WIN32)
   set(WINLIBS WS2_32.Lib)
 endif() 
 
-file(GLOB_RECURSE SOURCES RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "*.c*" "*.h") 
+file(GLOB_RECURSE SOURCES RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "*.c*" "*.h" "*.md")
 add_executable(Socket ${SOURCES} ${OPENSSL_SOURCES})
 
 target_link_libraries(Socket LINK_PUBLIC syncme ${LOGME_LIB} ${ALLSTAT_LIB} ${OPENSSL_LIBRARIES} ${WINLIBS})
