@@ -1,4 +1,4 @@
-# Socket example
+# SocketEvent example
 
 This example demonstrates the use of **Socket Event**.
 

@@ -1,3 +1,3 @@
 add_subdirectory(CriticalSection)
-add_subdirectory(Socket)
+add_subdirectory(SocketEvent)
 add_subdirectory(Timer)
