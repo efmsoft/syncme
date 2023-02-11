@@ -27,13 +27,13 @@ int IncreaseCounter()
   // Result: val is increased only once
 
   auto guard = Sec.Lock();   // <-- comment out this line
-	return Counter++;
+  return Counter++;
 }
 
 void EntryPoint()
 {
-	for (int i = 0; i < LOOPS; i++)
-		IncreaseCounter();
+  for (int i = 0; i < LOOPS; i++)
+    IncreaseCounter();
 }
 
 int main()
