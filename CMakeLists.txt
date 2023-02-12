@@ -44,7 +44,7 @@ set(FORCE_FETCH ON)
 
 set(ENABLE_ALLSTAT ON)
 set(ENABLE_LOGME ON)
-set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR})
+set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
 
 find_package(allstat MODULE)
 find_package(logme MODULE)
