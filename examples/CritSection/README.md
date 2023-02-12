@@ -1,4 +1,4 @@
-# CriticalSection example
+# CritSection example
 
 This example demonstrates the use of a critical section - **CritSection** (or **Syncme::CS**). In the Windows system, this object corresponds to CRITICAL_SECTION. For other operating systems, this object is implemented via **std::recursive_mutex**.
 
