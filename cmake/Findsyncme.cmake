@@ -1,5 +1,6 @@
 # Include this file to your project's CMakeList.txt to initialize
-# SYNCME_INCLUDE_DIR and SYNCME_LIBRARIES variables
+# SYNCME_INCLUDE_DIR and SYNCME_LIBRARIES variables and add syncme
+# subproject
 #
 # It is clear that this file does not try to search for the location 
 # of the library, but knows it exactly because it is located in the 
@@ -15,3 +16,5 @@ get_filename_component(SYNCME_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 
 set(SYNCME_INCLUDE_DIR ${SYNCME_ROOT}/lib/include)
 set(SYNCME_LIBRARIES syncme)
+
+add_subdirectory(${SYNCME_ROOT}/lib)
