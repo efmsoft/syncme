@@ -4,6 +4,7 @@ file(GLOB_RECURSE HEADERS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "*.h")
 add_library(syncme STATIC ${SOURCES} ${HEADERS}) 
 
 target_include_directories(syncme PUBLIC
+  ${ALLSTAT_INCLUDE_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}/include
   ${LOGME_INCLUDE_DIR}
   ${OPENSSL_INCLUDE_DIR}
