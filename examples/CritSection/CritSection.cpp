@@ -3,6 +3,7 @@
 
 #include <Syncme/CritSection.h>
 #include <Syncme/ProcessThreadId.h>
+#include <Syncme/Sleep.h>
 
 using namespace Syncme;
 
@@ -10,8 +11,8 @@ using namespace Syncme;
 // CritSection is an alias of Syncme::CS
 CritSection Sec;
 
-volatile int Counter = 0;
-const int LOOPS = 100000;
+int Counter = 0;
+const int LOOPS = 100;
 
 int IncreaseCounter()
 {
@@ -27,7 +28,13 @@ int IncreaseCounter()
   // Result: val is increased only once
 
   auto guard = Sec.Lock();   // <-- comment out this line
-  return Counter++;
+
+  // On multi cpu computers next lines can be changed on "return Counter++;"
+  // We are using Sleep(1) to ensure that the error occurs immediatelly
+  auto c = Counter + 1;
+  Sleep(1);
+  Counter = c;
+  return c;
 }
 
 void EntryPoint()
@@ -38,7 +45,7 @@ void EntryPoint()
 
 int main()
 {
-  for (int i = 0; i < 100; i++)
+  for (int i = 0; i < 5; i++)
   {
     Counter = 0;
 
@@ -50,11 +57,11 @@ int main()
 
     if (Counter != 2 * LOOPS)
     {
-      printf("Detected race condition!!!");
+      printf("Detected race condition!!!\n");
       exit(1);
     }
   }
 
-  printf("Everything is OK");
+  printf("Everything is OK\n");
   return 0;
 }
