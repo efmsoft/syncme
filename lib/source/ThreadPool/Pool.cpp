@@ -1,6 +1,7 @@
 #include <cassert>
 
 #include <Syncme/ProcessThreadId.h>
+#include <Syncme/Sleep.h>
 #include <Syncme/ThreadPool/Pool.h>
 
 using namespace Syncme::ThreadPool;
@@ -59,7 +60,7 @@ WorkerPtr Pool::PopFree()
   if (Stopping || Free.empty())
     return WorkerPtr();
 
-  auto t = Free.front();
+  WorkerPtr t = Free.front();
   Free.pop_front();
   
   return t;
@@ -75,33 +76,38 @@ void Pool::Push(WorkerList& list, WorkerPtr t)
 
 HEvent Pool::Run(TCallback cb, uint64_t* pid)
 {
-  if (pid)
-    *pid = 0;
-
-  auto t = PopFree();
-  if (t == nullptr)
+  for (; !Stopping; Sleep(1))
   {
-    TOnIdle notifyIdle = std::bind(&Pool::OnFree, this, std::placeholders::_1);
-    TOnExit notifyExit = std::bind(&Pool::OnExit, this, std::placeholders::_1);
-    t = std::make_shared<Worker>(notifyIdle, notifyExit);
 
-    if (!t->Start())
-      return nullptr;
+    if (pid)
+      *pid = 0;
 
-    Push(All, t);
+    auto t = PopFree();
+    if (t == nullptr)
+    {
+      TOnIdle notifyIdle = std::bind(&Pool::OnFree, this, std::placeholders::_1);
+      TOnExit notifyExit = std::bind(&Pool::OnExit, this, std::placeholders::_1);
+      t = std::make_shared<Worker>(notifyIdle, notifyExit);
+
+      if (!t->Start())
+        return nullptr;
+
+      Push(All, t);
+    }
+
+    uint64_t id;
+    HEvent h = t->Invoke(cb, id);
+    if (h)
+    {
+      if (pid != nullptr)
+        *pid = id;
+
+      return h;
+    }
+
+    t->SetExitTimer(0);
+    Push(Free, t);
   }
-
-  uint64_t id;
-  HEvent h = t->Invoke(cb, id);
-  if (h)
-  {
-    if (pid != nullptr)
-      *pid = id;
-
-    return h;
-  }
-    
-  Push(Free, t);
   return nullptr;
 }
 

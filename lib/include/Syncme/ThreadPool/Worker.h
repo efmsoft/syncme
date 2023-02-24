@@ -28,6 +28,7 @@ namespace Syncme
 
       uint64_t ThreadID;
       std::shared_ptr<std::thread> Thread;
+      bool Exited;
 
       TOnIdle NotifyIdle;
       TOnExit NotifyExit;

@@ -12,12 +12,12 @@ int main()
   auto event3 = CreateNotificationEvent(STATE::SIGNALLED);
 
   TimePoint t0;
-  SetWaitableTimer(timer1, 3000, 0, [t0](HEvent h) { printf("timer1 signalled after %li ms\n", t0.ElapsedSince()); });
-  SetWaitableTimer(timer2, 7000, 0, [t0](HEvent h) { printf("timer2 signalled after %li ms\n", t0.ElapsedSince()); });
+  SetWaitableTimer(timer1, 3000, 0, [t0](HEvent h) { printf("timer1 signalled after %lli ms\n", t0.ElapsedSince()); });
+  SetWaitableTimer(timer2, 7000, 0, [t0](HEvent h) { printf("timer2 signalled after %lli ms\n", t0.ElapsedSince()); });
 
   EventArray ev(timer1, timer2, event3);
   auto rc = WaitForMultipleObjects(ev, true);
-  printf("all objects are signalled after %li ms\n", t0.ElapsedSince());
+  printf("all objects are signalled after %lli ms\n", t0.ElapsedSince());
 
   printf("timer1 is %s\n", GetEventState(timer1) == STATE::SIGNALLED ? "signalled" : "not signalled");
   printf("timer2 is %s\n", GetEventState(timer2) == STATE::SIGNALLED ? "signalled" : "not signalled");
@@ -27,7 +27,7 @@ int main()
   auto timer3 = CreateAutoResetTimer();
 
   TimePoint t1;
-  SetWaitableTimer(timer3, 1000, 500, [t1](HEvent h) { printf("timer3 signalled after %li ms\n", t1.ElapsedSince()); });
+  SetWaitableTimer(timer3, 1000, 500, [t1](HEvent h) { printf("timer3 signalled after %lli ms\n", t1.ElapsedSince()); });
   for (int i = 0; i < 4; i++)
     WaitForSingleObject(timer3);
 

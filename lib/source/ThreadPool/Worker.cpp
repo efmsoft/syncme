@@ -3,6 +3,7 @@
 #include <Syncme/Logger/Log.h>
 #include <Syncme/ProcessThreadId.h>
 #include <Syncme/SetThreadName.h>
+#include <Syncme/Sleep.h>
 #include <Syncme/Sync.h>
 #include <Syncme/ThreadPool/Worker.h>
 
@@ -17,6 +18,7 @@ Worker::Worker(TOnIdle notifyIdle, TOnExit notifyExit)
   , InvokeEvent(CreateSynchronizationEvent())
   , ExitTimer(CreateManualResetTimer())
   , ThreadID{}
+  , Exited(false)
   , NotifyIdle(notifyIdle)
   , NotifyExit(notifyExit)
 {
@@ -46,8 +48,13 @@ HEvent Worker::Handle()
 
 void Worker::SetExitTimer(int64_t nsec)
 {
-  long period = long(nsec * 1000);
-  SetWaitableTimer(ExitTimer, period, 0, nullptr);
+  if (nsec == 0)
+    SetEvent(ExitTimer);
+  else
+  {
+    long period = long(nsec * 1000);
+    SetWaitableTimer(ExitTimer, period, 0, nullptr);
+  }
 }
 
 void Worker::CancelExitTimer()
@@ -100,6 +107,9 @@ HEvent Worker::Invoke(TCallback cb, uint64_t& id)
 {
   CancelExitTimer();
 
+  if (GetEventState(ExitTimer) == STATE::SIGNALLED)
+    return nullptr;
+
   assert(WaitForSingleObject(BusyEvent, 0) == WAIT_RESULT::TIMEOUT);
   assert(WaitForSingleObject(IdleEvent, 0) == WAIT_RESULT::OBJECT_0);
 
@@ -146,11 +156,12 @@ void Worker::EntryPoint()
     if (rc == WAIT_RESULT::OBJECT_1)
     {
       if (NotifyExit(this))
-      {
-        // At this point THIS is already deleted !!!!
-        return;
-      }
+        break;
 
+      if (GetEventState(StopEvent) == STATE::SIGNALLED)
+        break;
+
+      Syncme::Sleep(1);
       continue;
     }
 
@@ -181,4 +192,6 @@ void Worker::EntryPoint()
       assert(!"?!?!?");
     }
   }
+
+  Exited = true;
 }
