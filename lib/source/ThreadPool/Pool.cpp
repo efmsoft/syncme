@@ -3,6 +3,7 @@
 #include <Syncme/ProcessThreadId.h>
 #include <Syncme/Sleep.h>
 #include <Syncme/ThreadPool/Pool.h>
+#include <Syncme/TimePoint.h>
 
 #define LOCK_GUARD() \
   std::lock_guard<std::mutex> guard(Lock); \
@@ -155,6 +156,8 @@ void Pool::Push(WorkerList& list, WorkerPtr t)
 
 HEvent Pool::Run(TCallback cb, uint64_t* pid)
 {
+  TimePoint t0;
+
   if (pid)
     *pid = 0;
 
@@ -173,12 +176,17 @@ HEvent Pool::Run(TCallback cb, uint64_t* pid)
         if (Mode == OVERFLOW_MODE::FAIL)
         {
           Errors++;
+
+          LockedInRun += t0.ElapsedSince();
           return nullptr;
         }
 
         auto rc = WaitForMultipleObjects(ev, false);
         if (rc == WAIT_RESULT::OBJECT_0)
+        {
+          LockedInRun += t0.ElapsedSince();
           return nullptr;
+        }
 
         continue;
       }
@@ -190,6 +198,8 @@ HEvent Pool::Run(TCallback cb, uint64_t* pid)
       if (!t->Start())
       {
         Errors++;
+
+        LockedInRun += t0.ElapsedSince();
         return nullptr;
       }
 
@@ -206,12 +216,14 @@ HEvent Pool::Run(TCallback cb, uint64_t* pid)
     if (pid != nullptr)
       *pid = id;
 
+    LockedInRun += t0.ElapsedSince();
     return h;
   }
 
   Push(Unused, t);
   Errors++;
 
+  LockedInRun += t0.ElapsedSince();
   return nullptr;
 }
 
