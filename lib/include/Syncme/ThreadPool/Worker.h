@@ -13,29 +13,35 @@ namespace Syncme
   {
     class Worker;
     typedef std::function<void(void)> TCallback;
-    typedef std::function<bool(Worker*)> TOnIdle;
-    typedef std::function<bool(Worker*)> TOnExit;
+    typedef std::function<void(Worker*)> TOnIdle;
+    typedef std::function<void(Worker*)> TOnTimer;
 
     typedef std::shared_ptr<Worker> WorkerPtr;
 
     class Worker : public std::enable_shared_from_this<Worker>
     {
+      HEvent ManagementTimer;
+
       HEvent StopEvent;
       HEvent IdleEvent;
       HEvent BusyEvent;
       HEvent InvokeEvent;
-      HEvent ExitTimer;
+      HEvent ExpireTimer;
 
       uint64_t ThreadID;
       std::shared_ptr<std::thread> Thread;
       bool Exited;
 
       TOnIdle NotifyIdle;
-      TOnExit NotifyExit;
+      TOnTimer OnTimer;
       TCallback Callback;
 
     public:
-      Worker(TOnIdle notifyIdle, TOnExit notifyExit);
+      Worker(
+        HEvent managementTimer
+        , TOnIdle notifyIdle
+        , TOnTimer onTimer
+      );
       ~Worker();
 
       bool Start();
@@ -44,11 +50,11 @@ namespace Syncme
       HEvent Invoke(TCallback cb, uint64_t& id);
       WorkerPtr Get();
 
-      void SetExitTimer(int64_t nsec);
+      void SetExpireTimer(long ms);
+      void CancelExpireTimer();
+      bool IsExpired() const;
 
     private:
-      void CancelExitTimer();
-
       void EntryPoint();
       HEvent Handle();
     };

@@ -4,27 +4,94 @@
 #include <Syncme/Sleep.h>
 #include <Syncme/ThreadPool/Pool.h>
 
+#define LOCK_GUARD() \
+  std::lock_guard<std::mutex> guard(Lock); \
+  Owner = GetCurrentThreadId()
+
+#define SET_TIMER() \
+  SetWaitableTimer(Timer, 4 * MaxIdleTime / 3, 0, nullptr)
+
 using namespace Syncme::ThreadPool;
 
-static const size_t MAX_POOL_SIZE = 12;
-static const int64_t EXIT_AFTER = 3; // 3 sec
+static const size_t MAX_UNUSED_THREADS = 12;
+static const size_t MAX_THREADS = 100;
+static const long MAX_IDLE_TIME = 3000; // 3 sec
+
+namespace Syncme::ThreadPool
+{
+  std::atomic<uint64_t> ThreadsTotal;
+  std::atomic<uint64_t> ThreadsUnused;
+  std::atomic<uint64_t> ThreadsStopped;
+  std::atomic<uint64_t> LockedInRun;
+  std::atomic<uint64_t> OnTimerCalls;
+  std::atomic<uint64_t> Errors;
+}
 
 Pool::Pool()
-  : MaxSize(MAX_POOL_SIZE)
+  : MaxUnusedThreads(MAX_UNUSED_THREADS)
+  , MaxThreads(MAX_THREADS)
+  , MaxIdleTime(MAX_IDLE_TIME)
+  , Mode(OVERFLOW_MODE::WAIT)
+  , Timer(CreateAutoResetTimer())
   , Owner(0)
   , Stopping(false)
 {
+  FreeEvent = CreateSynchronizationEvent();
+  StopEvent = CreateNotificationEvent();
 }
 
 Pool::~Pool()
 {
+  CloseHandle(StopEvent);
+  CloseHandle(FreeEvent);
+}
+
+size_t Pool::GetMaxThread() const
+{
+  return MaxThreads;
+}
+
+void Pool::SetMaxThreads(size_t n)
+{
+  assert(n > 0);
+  MaxThreads = n;
+}
+
+size_t Pool::GetMaxUnusedThreads() const
+{
+  return MaxUnusedThreads;
+}
+
+void Pool::SetMaxUnusedThreads(size_t n)
+{
+  MaxUnusedThreads = n;
+}
+
+long Pool::GetMaxIdleTime() const
+{
+  return MaxIdleTime;
+}
+
+void Pool::SetMaxIdleTime(long t)
+{
+  MaxIdleTime = t;
+}
+
+OVERFLOW_MODE Pool::GetOverflowMode() const
+{
+  return Mode;
+}
+
+void Pool::SetOverflowMode(OVERFLOW_MODE mode)
+{
+  Mode = mode;
 }
 
 void Pool::SetStopping()
 {
-  std::lock_guard<std::mutex> guard(Lock);
-  Owner = GetCurrentThreadId();
+  LOCK_GUARD();
   Stopping = true;
+  SetEvent(StopEvent);
 }
 
 void Pool::Stop()
@@ -32,185 +99,233 @@ void Pool::Stop()
   SetStopping();
 
   for (auto& e : All)
+  {
     e->Stop();
+    ThreadsStopped++;
+  }
 
-  std::lock_guard<std::mutex> guard(Lock);
-  Owner = GetCurrentThreadId();
+  LOCK_GUARD();
+  assert(All.size() == Unused.size());
 
-  assert(All.size() == Free.size());
+  Unused.clear();
+  ThreadsUnused = 0;
 
-  Free.clear();
   All.clear();
-
-  CompleteDelete();
+  ThreadsTotal = 0;
 }
 
-void Pool::CompleteDelete()
+void Pool::StopUnused()
 {
-  Deleting.clear();
+  LOCK_GUARD();
+
+  for (auto& e : Unused)
+    e->SetExpireTimer(0);
+
+  Locked_StopExpired(nullptr);
 }
 
-WorkerPtr Pool::PopFree()
+WorkerPtr Pool::PopUnused(size_t& allCount)
 {
-  std::lock_guard<std::mutex> guard(Lock);
+  LOCK_GUARD();
 
-  Owner = GetCurrentThreadId();
-  CompleteDelete();
+  allCount = All.size();
 
-  if (Stopping || Free.empty())
+  if (Unused.empty())
     return WorkerPtr();
 
-  WorkerPtr t = Free.front();
-  Free.pop_front();
+  WorkerPtr t = Unused.front();
+  Unused.pop_front();
+  
+  ThreadsUnused = Unused.size();
+
+  t->CancelExpireTimer();
+  Locked_StopExpired(nullptr);
   
   return t;
 }
 
 void Pool::Push(WorkerList& list, WorkerPtr t)
 {
-  std::lock_guard<std::mutex> guard(Lock);
-  Owner = GetCurrentThreadId();
-
+  LOCK_GUARD();
   list.push_back(t);
+
+  ThreadsUnused = Unused.size();
+  ThreadsTotal = All.size();
 }
 
 HEvent Pool::Run(TCallback cb, uint64_t* pid)
 {
-  for (; !Stopping; Sleep(1))
+  if (pid)
+    *pid = 0;
+
+  WorkerPtr t;
+  EventArray ev(StopEvent, FreeEvent);
+
+  while (!Stopping)
   {
+    size_t allSize{};
+    t = PopUnused(allSize);
 
-    if (pid)
-      *pid = 0;
-
-    auto t = PopFree();
     if (t == nullptr)
     {
-      TOnIdle notifyIdle = std::bind(&Pool::OnFree, this, std::placeholders::_1);
-      TOnExit notifyExit = std::bind(&Pool::OnExit, this, std::placeholders::_1);
-      t = std::make_shared<Worker>(notifyIdle, notifyExit);
+      if (allSize >= MaxThreads)
+      {
+        if (Mode == OVERFLOW_MODE::FAIL)
+        {
+          Errors++;
+          return nullptr;
+        }
+
+        auto rc = WaitForMultipleObjects(ev, false);
+        if (rc == WAIT_RESULT::OBJECT_0)
+          return nullptr;
+
+        continue;
+      }
+
+      TOnIdle notifyIdle = std::bind(&Pool::CB_OnFree, this, std::placeholders::_1);
+      TOnTimer onTimer = std::bind(&Pool::CB_OnTimer, this, std::placeholders::_1);
+      t = std::make_shared<Worker>(Timer, notifyIdle, onTimer);
 
       if (!t->Start())
+      {
+        Errors++;
         return nullptr;
+      }
 
       Push(All, t);
     }
 
-    uint64_t id;
-    HEvent h = t->Invoke(cb, id);
-    if (h)
-    {
-      if (pid != nullptr)
-        *pid = id;
-
-      return h;
-    }
-
-    t->SetExitTimer(0);
-    Push(Free, t);
+    break;
   }
+
+  uint64_t id{};
+  HEvent h = t->Invoke(cb, id);
+  if (h)
+  {
+    if (pid != nullptr)
+      *pid = id;
+
+    return h;
+  }
+
+  Push(Unused, t);
+  Errors++;
+
   return nullptr;
 }
 
-bool Pool::OnFree(Worker* p)
+void Pool::Locked_Find(Worker* p, bool& all, bool& unused)
 {
-  WorkerPtr t;
+  WorkerPtr t = p->Get();
 
-  std::lock_guard<std::mutex> guard(Lock);
-  Owner = GetCurrentThreadId();
-
-  t = p->Get();
-
-  bool all = false;
+  all = false;
   for (auto& e : All)
   {
-    if (e.get() == p)
-    {
-      assert(t.get() == p);
-
-      all = true;
-      break;
-    }
+    if (e.get() != p)
+      continue;
+    
+    all = true;
+    break;
   }
 
-  bool free = false;
-  for (auto& e : Free)
+  unused = false;
+  for (auto& e : Unused)
   {
-    if (e.get() == p)
-    {
-      free = true;
-      break;
-    }
+    if (e.get() != p)
+      continue;
+
+    unused = true;
+    break;
   }
-
-  assert(all == true && free == false);
-
-  if (Free.size() >= MaxSize)
-    p->SetExitTimer(EXIT_AFTER);
-
-  Free.push_back(t);
-  return true;
 }
 
-bool Pool::OnExit(Worker* p)
+void Pool::CB_OnTimer(Worker* p)
 {
-  WorkerPtr t;
+  OnTimerCalls++;
 
-  std::lock_guard<std::mutex> guard(Lock);
-
-  Owner = GetCurrentThreadId();
-  CompleteDelete();
-
-  t = p->Get();
-
-  bool all = false;
-  for (auto& e : All)
+  if (Lock.try_lock())
   {
-    if (e.get() == p)
-    {
-      assert(t.get() == p);
+    Owner = GetCurrentThreadId();
 
-      all = true;
-      break;
-    }
+    Locked_StopExpired(p);
+    Lock.unlock();
+  }
+}
+
+void Pool::CB_OnFree(Worker* p)
+{
+  LOCK_GUARD();
+
+#ifdef _DEBUG  
+  bool all{}, unused{};
+  Locked_Find(p, all, unused);
+  assert(all == true && unused == false);
+#endif
+
+  if (Unused.size() + 1 > MaxUnusedThreads)
+  {
+    p->SetExpireTimer(MaxIdleTime);
+    SET_TIMER();
   }
 
-  bool free = false;
-  for (auto& e : Free)
-  {
-    if (e.get() == p)
-    {
-      free = true;
-      break;
-    }
-  }
+  WorkerPtr t = p->Get();
+  Unused.push_back(t);
+  SetEvent(FreeEvent);
+}
 
-  if (!all || !free || Stopping)
-    return false;
+void Pool::Locked_StopExpired(Worker* caller)
+{
+  CancelWaitableTimer(Timer);
 
-  for (auto it = Free.begin(); it != Free.end(); ++it)
-  {
-    if (it->get() == p)
-    {
-      Free.erase(it);
-      break;
-    }
-  }
+  if (Stopping)
+    return;
 
-  for (auto it = All.begin(); it != All.end(); ++it)
+  bool setTimer = false;
+  for (bool cont = true; cont;)
   {
-    if (it->get() == p)
+    cont = false;
+
+    for (auto it = Unused.begin(); it != Unused.end(); ++it)
     {
-      // We can not delete Worker item in the context of call from Worker::EntryPoint()
-      // We postpone it and delete on a next ThreadPool call
-      Deleting.push_back(t);
-      All.erase(it);
+      WorkerPtr e = *it;
+      if (!e->IsExpired())
+        continue;
+
+      if (caller && e.get() == caller)
+      {
+        setTimer = true;
+        continue;
+      }
+
+      auto ita = std::find_if(
+        All.begin()
+        , All.end()
+        , [e](WorkerPtr t) { return e.get() == t.get(); }
+      );
       
-      // Release before releasing lock!!!
-      t.reset();
-      return true;
+      assert(ita != All.end());
+
+      e->Stop();
+      ThreadsStopped++;
+
+      auto c0 = e.use_count();
+      assert(c0 == 3);
+
+      Unused.erase(it);
+      ThreadsUnused = Unused.size();
+
+      All.erase(ita);
+      ThreadsTotal = All.size();
+
+      auto c1 = e.use_count();
+      assert(c1 == 1);
+
+      cont = true;
+      break;
     }
   }
 
-  assert("!?!? how can it be");
-  return false;
+  if (setTimer)
+    SET_TIMER();
 }

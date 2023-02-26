@@ -3,7 +3,6 @@
 #include <Syncme/Logger/Log.h>
 #include <Syncme/ProcessThreadId.h>
 #include <Syncme/SetThreadName.h>
-#include <Syncme/Sleep.h>
 #include <Syncme/Sync.h>
 #include <Syncme/ThreadPool/Worker.h>
 
@@ -11,16 +10,26 @@
 
 using namespace Syncme::ThreadPool;
 
-Worker::Worker(TOnIdle notifyIdle, TOnExit notifyExit)
-  : StopEvent(CreateNotificationEvent())
+namespace Syncme::ThreadPool
+{
+  std::atomic<uint64_t> WorkersDescructed;
+}
+
+Worker::Worker(
+  HEvent managementTimer
+  , TOnIdle notifyIdle
+  , TOnTimer onTimer
+)
+  : ManagementTimer(managementTimer)
+  , StopEvent(CreateNotificationEvent())
   , IdleEvent(CreateNotificationEvent())
   , BusyEvent(CreateSynchronizationEvent())
   , InvokeEvent(CreateSynchronizationEvent())
-  , ExitTimer(CreateManualResetTimer())
+  , ExpireTimer(CreateManualResetTimer())
   , ThreadID{}
   , Exited(false)
   , NotifyIdle(notifyIdle)
-  , NotifyExit(notifyExit)
+  , OnTimer(onTimer)
 {
 }
 
@@ -32,7 +41,9 @@ Worker::~Worker()
   CloseHandle(IdleEvent);
   CloseHandle(BusyEvent);
   CloseHandle(InvokeEvent);
-  CloseHandle(ExitTimer);
+  CloseHandle(ExpireTimer);
+
+  WorkersDescructed++;
 }
 
 WorkerPtr Worker::Get() 
@@ -46,20 +57,23 @@ HEvent Worker::Handle()
   return h;
 }
 
-void Worker::SetExitTimer(int64_t nsec)
+void Worker::SetExpireTimer(long ms)
 {
-  if (nsec == 0)
-    SetEvent(ExitTimer);
+  if (ms)
+    SetWaitableTimer(ExpireTimer, ms, 0, nullptr);
   else
-  {
-    long period = long(nsec * 1000);
-    SetWaitableTimer(ExitTimer, period, 0, nullptr);
-  }
+    SetEvent(ExpireTimer);
 }
 
-void Worker::CancelExitTimer()
+void Worker::CancelExpireTimer()
 {
-  CancelWaitableTimer(ExitTimer);
+  CancelWaitableTimer(ExpireTimer);
+  ResetEvent(ExpireTimer);
+}
+
+bool Worker::IsExpired() const
+{
+  return GetEventState(ExpireTimer) == STATE::SIGNALLED;
 }
 
 bool Worker::Start()
@@ -67,15 +81,13 @@ bool Worker::Start()
   if (Thread)
     return true;
 
-  if (!StopEvent || !IdleEvent || !BusyEvent || !InvokeEvent || !ExitTimer)
+  if (!StopEvent || !IdleEvent || !BusyEvent || !InvokeEvent || !ExpireTimer)
     return false;
-
-  CancelExitTimer();
 
   Thread = std::make_shared<std::thread>(&Worker::EntryPoint, this);
   if (Thread == nullptr)
   {
-    LogE("CreateThread failed");
+    LogE("Unable to start thread");
     return false;
   }
 
@@ -93,6 +105,8 @@ void Worker::Stop()
 
     // Do not wait for thread termination if object is deleted from OnFree()
     auto id = GetCurrentThreadId();
+
+    assert(ThreadID);
     assert(id != ThreadID);
 
     if (id != ThreadID)
@@ -105,19 +119,15 @@ void Worker::Stop()
 
 HEvent Worker::Invoke(TCallback cb, uint64_t& id)
 {
-  CancelExitTimer();
-
-  if (GetEventState(ExitTimer) == STATE::SIGNALLED)
-    return nullptr;
-
+  assert(IsExpired() == false);
   assert(WaitForSingleObject(BusyEvent, 0) == WAIT_RESULT::TIMEOUT);
   assert(WaitForSingleObject(IdleEvent, 0) == WAIT_RESULT::OBJECT_0);
-
-  id = ThreadID;
   assert(Thread);
 
   if (!Thread)
     return nullptr;
+
+  id = ThreadID;
 
   HEvent h = Handle();
   if (h == nullptr)
@@ -142,7 +152,7 @@ void Worker::EntryPoint()
   sprintf(name, "TPool:%p", this);
   ThreadID = GetCurrentThreadId();
 
-  EventArray object(StopEvent, ExitTimer, InvokeEvent);
+  EventArray object(StopEvent, InvokeEvent, ManagementTimer);
   SetEvent(IdleEvent);
   
   for (;;)
@@ -153,19 +163,13 @@ void Worker::EntryPoint()
     if (rc == WAIT_RESULT::OBJECT_0)
       break;
 
-    if (rc == WAIT_RESULT::OBJECT_1)
+    if (rc == WAIT_RESULT::OBJECT_2)
     {
-      if (NotifyExit(this))
-        break;
-
-      if (GetEventState(StopEvent) == STATE::SIGNALLED)
-        break;
-
-      Syncme::Sleep(1);
+      OnTimer(this);
       continue;
     }
 
-    if (rc != WAIT_RESULT::OBJECT_2)
+    if (rc != WAIT_RESULT::OBJECT_1)
     {
       assert(!"!?!?!?!");
       break;
@@ -187,10 +191,7 @@ void Worker::EntryPoint()
       break;
     }
 
-    if (!NotifyIdle(this))
-    {
-      assert(!"?!?!?");
-    }
+    NotifyIdle(this);
   }
 
   Exited = true;

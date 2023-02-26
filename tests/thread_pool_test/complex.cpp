@@ -12,13 +12,17 @@
 #include <Syncme/Sleep.h>
 #include <Syncme/Sync.h>
 #include <Syncme/ThreadPool/Pool.h>
+#include <Syncme/ThreadPool/Counter.h>
 #include <Syncme/TickCount.h>
+#include <Syncme/SetThreadName.h>
 
 using namespace Syncme;
 using namespace Syncme::ThreadPool;
 
 static std::mutex Lock;
 static std::vector<uint32_t> Values;
+
+const int N_THREADS = 100;
 
 class Object
 {
@@ -50,7 +54,11 @@ public:
 
   void Worker()
   {
-    unsigned ms = std::rand() % 3000;
+    char name[64];
+    sprintf(name, "%p", this);
+    SET_CUR_THREAD_NAME(name);
+
+    unsigned ms = std::rand() % 200;
     
     EventArray ev(EvStop, EvAbort);
     auto rc = WaitForMultipleObjects(ev, false, ms);
@@ -61,7 +69,7 @@ public:
       Values.push_back(Cookie);
     }
 
-    ms = std::rand() % 10000;
+    ms = std::rand() % 100;
     rc = WaitForMultipleObjects(ev, false, ms);
   }
 };
@@ -79,18 +87,23 @@ TEST(Pool, complex)
   HEvent evStop = CreateNotificationEvent();
 
   Pool tpool;
-  ObjectArray ob;
-  for (int i = 0; i < 100; i++)
-  {
-    int ms = std::rand() % 200;
-    Sleep(ms);
+  tpool.SetMaxThreads(N_THREADS / 2);
+  tpool.SetMaxIdleTime(500);
+  tpool.SetMaxUnusedThreads(4);
 
+  ObjectArray ob;
+  for (int i = 0; i < N_THREADS; i++)
+  {
     ObjectPtr o = std::make_shared<Object>(evStop, tpool, cookie++);
     ob.push_back(o);
   }
 
   SetEvent(evStop);
   ob.clear();
+
+  tpool.StopUnused();
+  EXPECT_EQ(ThreadsTotal, 0);
+
   tpool.Stop();
 
   std::lock_guard<std::mutex> guard(Lock);
@@ -101,4 +114,9 @@ TEST(Pool, complex)
   {
     EXPECT_EQ(v, c++);
   }
+
+  printf("ThreadsStopped: %llu\n", (uint64_t)ThreadsStopped);
+  printf("WorkersDescructed: %llu\n", (uint64_t)WorkersDescructed);
+  printf("LockedInRun: %llu\n", (uint64_t)LockedInRun);
+  printf("Errors: %llu\n", (uint64_t)Errors);
 }
