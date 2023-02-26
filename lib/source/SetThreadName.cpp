@@ -1,9 +1,13 @@
+#include <algorithm>
 #include <stdint.h>
 
 #ifdef _WIN32
 
+#define NOMINMAX
 #include <windows.h>
 #include <Syncme/SetThreadName.h>
+
+constexpr static size_t NAME_LIMIT = 512;
 
 #elif defined(__GNUC__)
 
@@ -25,9 +29,14 @@ typedef struct tagTHREADNAME_INFO
 
 void Syncme::SetThreadName(uint64_t threadID, const char* threadName)
 {
+  char name[NAME_LIMIT]{};
+  size_t n = std::min(NAME_LIMIT - 1, strlen(threadName));
+  memset(name, 0, NAME_LIMIT);
+  memcpy(name, threadName, n);
+
   THREADNAME_INFO info{};
   info.dwType = 0x1000;
-  info.szName = threadName;
+  info.szName = name;
   info.dwThreadID = (uint32_t)threadID;
   info.dwFlags = 0;
 
@@ -42,12 +51,12 @@ void Syncme::SetThreadName(uint64_t threadID, const char* threadName)
 
 void Syncme::SetThreadName(uint64_t threadID, const wchar_t* threadName)
 {
-  char name[512]{};
+  char name[NAME_LIMIT]{};
   LPSTR p = name;
 
   // Convert to 8 bit string. Assume that the name string contains only 
   // latin characters
-  for (int iIdx = 0; *threadName && iIdx < sizeof(name) - 1; iIdx++)
+  for (int iIdx = 0; *threadName && iIdx < NAME_LIMIT - 1; iIdx++)
     *p++ = (char)*threadName++;
 
   *p = '\0';
