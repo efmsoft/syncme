@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <thread>
 
+#include <Syncme/CritSection.h>
 #include <Syncme/Sync.h>
 
 namespace Syncme
@@ -30,11 +31,16 @@ namespace Syncme
 
       uint64_t ThreadID;
       std::shared_ptr<std::thread> Thread;
+      
+      bool Started;
+      bool Stopped;
       bool Exited;
 
       TOnIdle NotifyIdle;
       TOnTimer OnTimer;
       TCallback Callback;
+
+      CS StateLock;
 
     public:
       Worker(
