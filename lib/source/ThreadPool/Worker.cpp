@@ -6,15 +6,6 @@
 #include <Syncme/Sync.h>
 #include <Syncme/ThreadPool/Worker.h>
 
-#include <windows.h>
-#include <debugapi.h>
-
-#define _assert(expr) \
-  do { \
-      if (!(expr)) \
-          DebugBreak(); \
-  } while (0)
-
 #pragma warning(disable : 4996)
 
 using namespace Syncme::ThreadPool;
@@ -46,7 +37,7 @@ Worker::Worker(
 
 Worker::~Worker()
 {
-  _assert(Stopped == true);
+  assert(Stopped == true);
 
   CloseHandle(StopEvent);
   CloseHandle(IdleEvent);
@@ -89,11 +80,11 @@ bool Worker::IsExpired() const
 
 bool Worker::Start()
 {
-  _assert(Exited == false);
-  _assert(Stopped == false);
-  _assert(Started == false);
+  assert(Exited == false);
+  assert(Stopped == false);
+  assert(Started == false);
 
-  _assert(Thread == nullptr);
+  assert(Thread == nullptr);
 
   if (Thread)
     return true;
@@ -109,7 +100,7 @@ bool Worker::Start()
   }
 
   auto rc = WaitForSingleObject(IdleEvent, FOREVER);
-  _assert(rc == WAIT_RESULT::OBJECT_0);
+  assert(rc == WAIT_RESULT::OBJECT_0);
 
   Started = true;
   return true;
@@ -117,8 +108,8 @@ bool Worker::Start()
 
 void Worker::Stop()
 {
-  _assert(Started == true);
-  _assert(Stopped == false);
+  assert(Started == true);
+  assert(Stopped == false);
 
   if (Thread)
   {
@@ -127,8 +118,8 @@ void Worker::Stop()
     // Do not wait for thread termination if object is deleted from OnFree()
     auto id = GetCurrentThreadId();
 
-    _assert(ThreadID);
-    _assert(id != ThreadID);
+    assert(ThreadID);
+    assert(id != ThreadID);
 
     if (id != ThreadID)
       Thread->join();
@@ -142,18 +133,18 @@ void Worker::Stop()
 
 HEvent Worker::Invoke(TCallback cb, uint64_t& id)
 {
-  _assert(Started == true);
-  _assert(Stopped == false);
-  _assert(Exited == false);
+  assert(Started == true);
+  assert(Stopped == false);
+  assert(Exited == false);
 
   auto stateExpired = GetEventState(ExpireTimer);
   auto stateBusy = GetEventState(BusyEvent);
   auto stateIdle = GetEventState(IdleEvent);
 
-  _assert(stateExpired == STATE::NOT_SIGNALLED);
-  _assert(stateBusy == STATE::NOT_SIGNALLED);
-  _assert(stateIdle == STATE::SIGNALLED);
-  _assert(Thread);
+  assert(stateExpired == STATE::NOT_SIGNALLED);
+  assert(stateBusy == STATE::NOT_SIGNALLED);
+  assert(stateIdle == STATE::SIGNALLED);
+  assert(Thread);
 
   if (!Thread)
     return nullptr;
@@ -176,7 +167,7 @@ HEvent Worker::Invoke(TCallback cb, uint64_t& id)
 
   EventArray object(StopEvent, BusyEvent);
   auto rc = WaitForMultipleObjects(object, false, FOREVER);
-  _assert(rc == WAIT_RESULT::OBJECT_0 || rc == WAIT_RESULT::OBJECT_1);
+  assert(rc == WAIT_RESULT::OBJECT_0 || rc == WAIT_RESULT::OBJECT_1);
 
   return h;
 }
@@ -187,7 +178,7 @@ void Worker::EntryPoint()
   sprintf(name, "TPool:%p", this);
   ThreadID = GetCurrentThreadId();
 
-  _assert(Exited == false);
+  assert(Exited == false);
 
   EventArray object(StopEvent, InvokeEvent, ManagementTimer);
   SetEvent(IdleEvent);
@@ -208,7 +199,7 @@ void Worker::EntryPoint()
 
     if (rc != WAIT_RESULT::OBJECT_1)
     {
-      _assert(!"!?!?!?!");
+      assert(!"!?!?!?!");
       break;
     }
 
