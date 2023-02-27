@@ -21,34 +21,24 @@ BIOSocket::~BIOSocket()
 
 bool BIOSocket::Attach(int socket, bool enableClose)
 {
+  auto guard = Lock.Lock();
+
   bool f = Socket::Attach(socket, enableClose);
   if (!f)
     return false;
 
-  std::lock_guard<std::mutex> guard(Lock);
+  assert(Bio == nullptr);
 
-  while (true)
+  Bio = BIO_new_socket(int(Handle), BIO_NOCLOSE);
+  if (!Bio)
   {
-    assert(Bio == nullptr);
+    LogE("BIO_new_socket() failed");
 
-    if (Bio != nullptr)
-    {
-      LogE("Bio is not nullptr");
-      break;
-    }
-
-    Bio = BIO_new_socket(int(Handle), BIO_NOCLOSE);
-    if (!Bio)
-    {
-      LogE("BIO_new_socket() failed");
-      break;
-    }
-
-    return true;
+    Socket::Detach();
+    return false;
   }
 
-  Socket::Detach();
-  return false;
+  return true;
 }
 
 void BIOSocket::Shutdown()

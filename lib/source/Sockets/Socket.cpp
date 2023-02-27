@@ -45,7 +45,7 @@ SKT_ERROR Socket::GetLastError() const
 
 int Socket::Detach(bool* enableClose)
 {
-  std::lock_guard<std::mutex> guard(Lock);
+  auto guard = Lock.Lock();
 
   int h = Handle;
   Handle = -1;
@@ -68,7 +68,7 @@ bool Socket::PeerDisconnected() const
 
 bool Socket::Attach(int socket, bool enableClose)
 {
-  std::lock_guard<std::mutex> guard(Lock);
+  auto guard = Lock.Lock();
 
   assert(Handle == -1);
   assert(socket != -1 || Pair->ClosePending);
@@ -425,7 +425,7 @@ bool Socket::PeerFromHostString(
 
 void Socket::AddLimit(int code, size_t count, uint64_t duration)
 {
-  std::lock_guard<std::mutex> guard(Lock);
+  auto guard = Lock.Lock();
 
   auto it = Limits.find(code);
   if (it != Limits.end())
@@ -440,7 +440,7 @@ void Socket::AddLimit(int code, size_t count, uint64_t duration)
 
 bool Socket::ReportError(int code)
 {
-  std::lock_guard<std::mutex> guard(Lock);
+  auto guard = Lock.Lock();
 
   auto it = Limits.find(code);
   if (it == Limits.end())

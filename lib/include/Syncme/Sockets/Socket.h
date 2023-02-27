@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include <Syncme/CritSection.h>
 #include <Syncme/Logger/Channel.h>
 #include <Syncme/Sockets/ErrorLimit.h>
 #include <Syncme/Sync.h>
@@ -42,7 +43,7 @@ namespace Syncme
     SocketPair* Pair;
     CHANNEL& CH;
 
-    std::mutex Lock;
+    CS Lock;
     int Handle;
     bool EnableClose;
     HEvent RxEvent;
