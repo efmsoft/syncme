@@ -90,6 +90,8 @@ void Socket::Close()
 
     CloseHandle(RxEvent);
 
+    shutdown(socket, SD_RECEIVE);
+
     if (callClose)
       closesocket(socket);
   }
