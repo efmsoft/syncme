@@ -4,6 +4,7 @@
 #include <mutex>
 #include <stdint.h>
 
+#include <Syncme/TimePoint.h>
 #include <Syncme/ThreadPool/Worker.h>
 
 namespace Syncme
@@ -40,8 +41,10 @@ namespace Syncme
       Pool();
       ~Pool();
 
-      HEvent Run(TCallback cb, uint64_t* pid = nullptr);
+      void Prealloc();
       void Stop();
+
+      HEvent Run(TCallback cb, uint64_t* pid = nullptr);
 
       void StopUnused();
 
@@ -67,6 +70,7 @@ namespace Syncme
 
       void Locked_StopExpired(Worker* caller);
       void Locked_Find(Worker* p, bool& all, bool& unused);
+      WorkerPtr CreateWorker(const TimePoint& t0);
     };
   }
 }

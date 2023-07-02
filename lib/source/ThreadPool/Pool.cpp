@@ -3,7 +3,6 @@
 #include <Syncme/ProcessThreadId.h>
 #include <Syncme/Sleep.h>
 #include <Syncme/ThreadPool/Pool.h>
-#include <Syncme/TimePoint.h>
 
 #define LOCK_GUARD() \
   std::lock_guard<std::mutex> guard(Lock); \
@@ -95,6 +94,20 @@ void Pool::SetStopping()
   SetEvent(StopEvent);
 }
 
+void Pool::Prealloc()
+{
+  for (size_t i = 0; i < MaxUnusedThreads; ++i)
+  {
+    TimePoint t0;
+    
+    WorkerPtr t = CreateWorker(t0);
+    if (t == nullptr)
+      break;
+
+    Push(Unused, t);
+  }
+}
+
 void Pool::Stop()
 {
   SetStopping();
@@ -154,6 +167,24 @@ void Pool::Push(WorkerList& list, WorkerPtr t)
   ThreadsTotal = All.size();
 }
 
+WorkerPtr Pool::CreateWorker(const TimePoint& t0)
+{
+  TOnIdle notifyIdle = std::bind(&Pool::CB_OnFree, this, std::placeholders::_1);
+  TOnTimer onTimer = std::bind(&Pool::CB_OnTimer, this, std::placeholders::_1);
+  WorkerPtr t = std::make_shared<Worker>(Timer, notifyIdle, onTimer);
+
+  if (!t->Start())
+  {
+    Errors++;
+
+    LockedInRun += t0.ElapsedSince();
+    return nullptr;
+  }
+
+  Push(All, t);
+  return t;
+}
+
 HEvent Pool::Run(TCallback cb, uint64_t* pid)
 {
   TimePoint t0;
@@ -191,19 +222,10 @@ HEvent Pool::Run(TCallback cb, uint64_t* pid)
         continue;
       }
 
-      TOnIdle notifyIdle = std::bind(&Pool::CB_OnFree, this, std::placeholders::_1);
-      TOnTimer onTimer = std::bind(&Pool::CB_OnTimer, this, std::placeholders::_1);
-      t = std::make_shared<Worker>(Timer, notifyIdle, onTimer);
+      t = CreateWorker(t0);
 
-      if (!t->Start())
-      {
-        Errors++;
-
-        LockedInRun += t0.ElapsedSince();
+      if (t == nullptr)
         return nullptr;
-      }
-
-      Push(All, t);
     }
 
     break;
