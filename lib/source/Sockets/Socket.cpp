@@ -9,6 +9,8 @@
 
 #ifndef _WIN32
 #define strtok_s strtok_r
+#else
+#include <mstcpip.h>
 #endif
 
 using namespace Syncme;
@@ -162,7 +164,42 @@ bool Socket::SetOptions()
       LogosE("setsockopt(TCP_NODELAY) failed");
       return false;
     }
+
+    LogI("TCP_NODELAY was set to true");
   }
+
+#ifdef _WIN32
+  ULONG delay = (ULONG)config->GetInt("keepalive-delay", 45000);
+  if (delay)
+  {
+    struct tcp_keepalive keepalive_vals = {
+        1,      // TCP keep-alive on.
+        delay,  // Delay seconds before sending first TCP keep-alive packet.
+        delay,  // Delay seconds between sending TCP keep-alive packets.
+    };
+
+    DWORD bytes_returned = 0xABAB;
+    int rv = WSAIoctl(
+      Handle
+      , SIO_KEEPALIVE_VALS
+      , &keepalive_vals
+      , sizeof(keepalive_vals)
+      , nullptr
+      , 0
+      , &bytes_returned
+      , nullptr
+      , nullptr
+    );
+
+    if (rv == SOCKET_ERROR)
+    {
+      LogosE("WSAIoctl(SIO_KEEPALIVE_VALS) failed");
+      return false;
+    }
+
+    LogI("keepalive-delay set to %i ms", int(delay));
+  }
+#endif
   return true;
 }
 
@@ -199,6 +236,8 @@ bool Socket::SwitchToUnblockingMode()
       LogosE("ioctlsocket(FIONBIO) failed");
       return false;
     }
+
+    LogI("Unblocking mode is switched on");
   }
 
   BlockingMode = false;
