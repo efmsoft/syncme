@@ -25,6 +25,7 @@ namespace Syncme
       void* UnregisterDone;
       void* WSAEvent;
       void* WaitObject;
+      bool Revoked;
 #endif
 
     public:

@@ -251,16 +251,11 @@ int Socket::WaitRxReady(int timeout)
   auto start = GetTimeInMillisec();
   EventArray events(Pair->GetExitEvent(), Pair->GetCloseEvent(), RxEvent, BreakRead);
 
-  const uint64_t delay = 1;
+  const uint64_t restart = 40;
 
-  for (uint64_t t0 = 0;;)
+  for (;;)
   {
     auto t = GetTimeInMillisec();
-    if (t - t0 < delay)
-      Sleep(1);
-
-    t0 = t;
-
     uint32_t milliseconds = FOREVER;
 
     if (timeout != FOREVER)
@@ -272,6 +267,8 @@ int Socket::WaitRxReady(int timeout)
       }
 
       milliseconds = uint32_t(start + timeout - t);
+      if (milliseconds > restart)
+        milliseconds = restart;
     }
 
     auto rc = WaitForMultipleObjects(events, false, milliseconds);
@@ -289,8 +286,14 @@ int Socket::WaitRxReady(int timeout)
 
     if (rc == WAIT_RESULT::TIMEOUT)
     {
-      SetLastError(Peer.Disconnected ? SKT_ERROR::GRACEFUL_DISCONNECT : SKT_ERROR::TIMEOUT);
-      return 0;
+      t = GetTimeInMillisec();
+      if (t - start >= timeout)
+      {
+        SetLastError(Peer.Disconnected ? SKT_ERROR::GRACEFUL_DISCONNECT : SKT_ERROR::TIMEOUT);
+        return 0;
+      }
+
+      continue;
     }
 
     if (rc == WAIT_RESULT::FAILED)

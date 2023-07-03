@@ -1,6 +1,7 @@
 #include <cassert>
 
 #include <Syncme/Logger/Log.h>
+#include <Syncme/Sleep.h>
 #include <Syncme/Sockets/API.h>
 #include <Syncme/Sockets/Counter.h>
 #include <Syncme/Sockets/SocketEvent.h>
@@ -19,8 +20,9 @@ SocketEvent::SocketEvent(int socket, int mask)
   , Events(0)
 #ifdef _WIN32
   , UnregisterDone(::CreateEventA(nullptr, true, false, nullptr))
-  , WSAEvent(WSACreateEvent())
+  , WSAEvent(CreateEventA(nullptr, false, false, nullptr))
   , WaitObject(nullptr)
+  , Revoked(false)
 #endif
 {
   assert(socket != -1);
@@ -146,16 +148,9 @@ void SocketEvent::Update()
     if (ioctlsocket(Socket, FIONREAD, &n) == 0)
     {
       if (n)
-        Events |= EVENT_READ;
-      else
-        Events &= ~EVENT_READ;
+        SetEvent(this);
     }
   }
-
-  if (Events)
-    SetEvent(this);
-  else
-    ResetEvent(this);
 }
 
 bool SocketEvent::Wait(uint32_t ms)
@@ -198,8 +193,45 @@ int SocketEvent::GetEvents()
   {
     auto guard = EventLock.Lock();
 
+#ifdef _WIN32
+    WSANETWORKEVENTS events{};
+    int rc = WSAEnumNetworkEvents(
+      (SOCKET)Socket
+      , WSAEvent
+      , &events
+    );
+
+    Revoked = false;
+
+    if (rc)
+    {
+      LogosE("WSAEnumNetworkEvents failed");
+    }
+    else
+    {
+      if ((events.lNetworkEvents & FD_READ) && (EventMask & EVENT_READ))
+        Events |= EVENT_READ;
+
+      if ((events.lNetworkEvents & FD_WRITE) && (EventMask & EVENT_WRITE))
+        Events |= EVENT_WRITE;
+
+      if ((events.lNetworkEvents & FD_CLOSE) && (EventMask & EVENT_CLOSE))
+        Events |= EVENT_CLOSE;
+    }
+#endif
+
     e = Events;
     Events = 0;
+
+    if ((EventMask & EVENT_READ) && !(e & EVENT_READ))
+    {
+      unsigned long n = 0;
+      if (ioctlsocket(Socket, FIONREAD, &n) == 0)
+      {
+        if (n)
+          e |= EVENT_READ;
+      }
+    }
 
     if (e & EVENT_CLOSE)
     {
@@ -265,39 +297,10 @@ void CALLBACK SocketEvent::WaitOrTimerCallback(
 
 void SocketEvent::Callback(bool timerOrWaitFired)
 {
+  // TimerOrWaitFired[in]
+  // If this parameter is TRUE, the wait timed out. If this parameter is FALSE, 
+  // the wait event has been signaled
   assert(timerOrWaitFired == false);
-
-  do
-  {
-    auto guard = EventLock.Lock();
-    if (EventMask == 0)
-      break;
-
-    WSANETWORKEVENTS events{};
-    int e = WSAEnumNetworkEvents(
-      (SOCKET)Socket
-      , WSAEvent
-      , &events
-    );
-
-    if (e)
-    {
-      LogosE("WSAEnumNetworkEvents failed");
-    }
-    else
-    {
-      if ((events.lNetworkEvents & FD_READ) && (EventMask & EVENT_READ))
-        Events |= EVENT_READ;
-
-      if ((events.lNetworkEvents & FD_WRITE) && (EventMask & EVENT_WRITE))
-        Events |= EVENT_WRITE;
-
-      if ((events.lNetworkEvents & FD_CLOSE) && (EventMask & EVENT_CLOSE))
-        Events |= EVENT_CLOSE;
-
-      if (Events)
-        SetEvent(this);
-    }
-  } while (false);
+  SetEvent(this);
 }
 #endif
