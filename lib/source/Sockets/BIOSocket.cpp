@@ -81,8 +81,12 @@ int BIOSocket::InternalRead(void* buffer, size_t size, int timeout)
 
 int BIOSocket::Read(void* buffer, size_t size, int timeout)
 {
-  int n = InternalRead(buffer, size, timeout);
-  if (n > 0)
+  int n = ReadPacket(buffer, size);
+  if (n)
+    return n;
+
+  n = InternalRead(buffer, size, timeout);
+  if (n > 0 || n < 0)
     return n;
 
   n = WaitRxReady(timeout);

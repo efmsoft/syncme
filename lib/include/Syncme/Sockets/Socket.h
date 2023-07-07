@@ -57,6 +57,11 @@ namespace Syncme
     SKT_ERROR LastError;
     std::map<int, ErrorLimitPtr> Limits;
 
+    typedef std::vector<char> Packet;
+    typedef std::shared_ptr<Packet> PacketPtr;
+    typedef std::list<PacketPtr> PacketQueue;
+    PacketQueue Packets;
+
   public:
     Socket(SocketPair* pair, int handle = -1, bool enableClose = true);
     virtual ~Socket();
@@ -67,6 +72,7 @@ namespace Syncme
     virtual bool Configure();
     virtual bool StopPendingRead();
     virtual void Shutdown() = 0;
+    virtual void Unread(const char* p, size_t n);
     
     bool IsAttached() const;
     bool PeerDisconnected() const;
@@ -97,6 +103,7 @@ namespace Syncme
     virtual bool SwitchToUnblockingMode();
 
     int WaitRxReady(int timeout);
+    int ReadPacket(void* buffer, size_t size);
     virtual int InternalWrite(const void* buffer, size_t size, int timeout) = 0;
   };
 

@@ -6,6 +6,7 @@
 #include <Syncme/Sockets/Counter.h>
 #include <Syncme/Sockets/SocketEvent.h>
 #include <Syncme/Sockets/SocketEventQueue.h>
+#include <Syncme/Sockets/WaitManager.h>
 
 using namespace Syncme::Implementation;
 
@@ -19,10 +20,7 @@ SocketEvent::SocketEvent(int socket, int mask)
   , EventMask(mask)
   , Events(0)
 #ifdef _WIN32
-  , UnregisterDone(::CreateEventA(nullptr, true, false, nullptr))
-  , WSAEvent(CreateEventA(nullptr, false, false, nullptr))
-  , WaitObject(nullptr)
-  , Revoked(false)
+  , WSAEvent(WSACreateEvent())
 #endif
 {
   assert(socket != -1);
@@ -42,25 +40,9 @@ SocketEvent::SocketEvent(int socket, int mask)
   if (EventMask & EVENT_CLOSE)
     events |= FD_CLOSE;
 
-  if (WSAEventSelect((SOCKET)Socket, WSAEvent, events))
+  if (!WSAEvent || WSAEventSelect((SOCKET)Socket, WSAEvent, events))
   {
     LogosE("WSAEventSelect failed");
-  }
-  else
-  {
-    auto f = RegisterWaitForSingleObject(
-      &WaitObject
-      , WSAEvent
-      , &WaitOrTimerCallback
-      , this
-      , INFINITE
-      , WT_EXECUTEDEFAULT
-    );
-
-    if (!f)
-    {
-      LogosE("RegisterWaitForSingleObject failed");
-    }
   }
 #endif
 
@@ -76,43 +58,12 @@ SocketEvent::~SocketEvent()
   }
 
 #ifdef _WIN32
-  if (WaitObject)
-  {
-    // MSDN:  If the function succeeds, or if the function fails with ERROR_IO_PENDING, 
-    // the caller should always wait until the event is signaled to close the event. 
-    // If the function fails with a different error code, it is not necessary to wait 
-    // until the event is signaled to close the event.
-    BOOL f = ::UnregisterWaitEx(WaitObject, UnregisterDone);
-    if (!f && ::GetLastError() == ERROR_IO_PENDING)
-      f = true;
-
-    if (!f)
-    {
-      LogosE("UnregisterWaitEx failed");
-    }
-    else
-    {
-      auto rc = ::WaitForSingleObject(UnregisterDone, INFINITE);
-      assert(rc == WAIT_OBJECT_0);
-    }
-
-    WaitObject = nullptr;
-  }
-
   if (WSAEvent)
   {
     auto f = WSACloseEvent(WSAEvent);
     assert(f);
 
     WSAEvent = nullptr;
-  }
-
-  if (UnregisterDone)
-  {
-    auto f = ::CloseHandle(UnregisterDone);
-    assert(f);
-
-    UnregisterDone = nullptr;
   }
 #endif
 
@@ -133,36 +84,37 @@ void SocketEvent::OnCloseHandle()
 
   if (queue->Empty())
     queue.reset();
+#else
+  WaitManager::RemoveSocketEvent(this);
 #endif
 
   Event::OnCloseHandle();
 }
 
-void SocketEvent::Update()
-{
-  auto guard = EventLock.Lock();
-
-  if (EventMask & EVENT_READ)
-  {
-    unsigned long n = 0;
-    if (ioctlsocket(Socket, FIONREAD, &n) == 0)
-    {
-      if (n)
-        SetEvent(this);
-    }
-  }
-}
-
 bool SocketEvent::Wait(uint32_t ms)
 {
-  Update();
-  return Event::Wait(ms);
+  WaitManager::AddSocketEvent(this);
+  
+  bool f = Event::Wait(ms);
+
+  WaitManager::RemoveSocketEvent(this);
+  return f;
 }
 
 uint32_t SocketEvent::RegisterWait(TWaitComplete complete)
 {
-  Update();
+  WaitManager::AddSocketEvent(this);
   return Event::RegisterWait(complete);
+}
+
+bool SocketEvent::UnregisterWait(uint32_t cookie)
+{
+  bool f = Event::UnregisterWait(cookie);
+
+  if (f)
+    WaitManager::RemoveSocketEvent(this);
+
+  return f;
 }
 
 #ifndef _WIN32
@@ -191,8 +143,6 @@ int SocketEvent::GetEvents()
 
   if (true)
   {
-    auto guard = EventLock.Lock();
-
 #ifdef _WIN32
     WSANETWORKEVENTS events{};
     int rc = WSAEnumNetworkEvents(
@@ -201,8 +151,6 @@ int SocketEvent::GetEvents()
       , &events
     );
 
-    Revoked = false;
-
     if (rc)
     {
       LogosE("WSAEnumNetworkEvents failed");
@@ -210,28 +158,22 @@ int SocketEvent::GetEvents()
     else
     {
       if ((events.lNetworkEvents & FD_READ) && (EventMask & EVENT_READ))
-        Events |= EVENT_READ;
+        e |= EVENT_READ;
 
       if ((events.lNetworkEvents & FD_WRITE) && (EventMask & EVENT_WRITE))
-        Events |= EVENT_WRITE;
+        e |= EVENT_WRITE;
 
       if ((events.lNetworkEvents & FD_CLOSE) && (EventMask & EVENT_CLOSE))
-        Events |= EVENT_CLOSE;
+        e |= EVENT_CLOSE;
+    }
+#else
+    if (true)
+    {
+      auto guard = EventLock.Lock();
+      e = Events;
+      Events = 0;
     }
 #endif
-
-    e = Events;
-    Events = 0;
-
-    if ((EventMask & EVENT_READ) && !(e & EVENT_READ))
-    {
-      unsigned long n = 0;
-      if (ioctlsocket(Socket, FIONREAD, &n) == 0)
-      {
-        if (n)
-          e |= EVENT_READ;
-      }
-    }
 
     if (e & EVENT_CLOSE)
     {
@@ -275,32 +217,11 @@ void SocketEvent::FireEvents(int events)
   if ((events & EventMask) == 0)
     return;
 
-  do
+  if (true)
   {
     auto guard = EventLock.Lock();
     Events = events & EventMask;
-
-  } while (false);
+  }
 
   SetEvent(this);
 }
-
-#ifdef _WIN32
-void CALLBACK SocketEvent::WaitOrTimerCallback(
-  void* lpParameter
-  , unsigned char timerOrWaitFired
-)
-{
-  SocketEvent* self = (SocketEvent*)lpParameter;
-  self->Callback(timerOrWaitFired != 0);
-}
-
-void SocketEvent::Callback(bool timerOrWaitFired)
-{
-  // TimerOrWaitFired[in]
-  // If this parameter is TRUE, the wait timed out. If this parameter is FALSE, 
-  // the wait event has been signaled
-  assert(timerOrWaitFired == false);
-  SetEvent(this);
-}
-#endif

@@ -6,6 +6,10 @@
 #include <Syncme/Sockets/SSLSocket.h>
 #include <Syncme/TickCount.h>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 using namespace Syncme;
 
 SSLSocket::SSLSocket(SocketPair* pair, SSL* ssl)
@@ -115,7 +119,10 @@ void SSLSocket::Shutdown()
 
 int SSLSocket::Read(void* buffer, size_t size, int timeout)
 {
-  int n = 0;
+  int n = ReadPacket(buffer, size);
+  if (n)
+    return n;
+
   do
   {
     if (true)
@@ -141,19 +148,15 @@ int SSLSocket::Read(void* buffer, size_t size, int timeout)
 
         if (n < 0)
         {
-          int err = SSL_get_error(Ssl, n);
-          switch (err)
-          {
-          case SSL_ERROR_NONE:
-          case SSL_ERROR_WANT_READ:
-          case SSL_ERROR_ZERO_RETURN:
+          auto err = GetError(n);
+          if (err == SKT_ERROR::NONE || err == SKT_ERROR::WOULDBLOCK)
             break;
 
-          default:
-            LogE("SSL_read() returned error %s", SslError(err).c_str());
-            CloseNotify = false;
-            return -1;
-          }
+          int e = SSL_get_error(Ssl, n);
+          LogE("SSL_read() returned error %s", SslError(e).c_str());
+          CloseNotify = false;
+          return -1;
+         
         }
       }
     }
@@ -175,20 +178,17 @@ int SSLSocket::Read(void* buffer, size_t size, int timeout)
 
   if (n == -1)
   {
-    int err = SSL_get_error(Ssl, n);
-    switch (err)
+    auto err = GetError(n);
+    if (err == SKT_ERROR::NONE || err == SKT_ERROR::WOULDBLOCK)
     {
-    case SSL_ERROR_NONE:
-    case SSL_ERROR_WANT_READ:
-    case SSL_ERROR_ZERO_RETURN:
       SetLastError(Peer.Disconnected ? SKT_ERROR::GRACEFUL_DISCONNECT : SKT_ERROR::NONE);
       return 0;
-
-    default:
-      LogE("SSL_read() returned error %s", SslError(err).c_str());
-      CloseNotify = false;
-      return -1;
     }
+
+    int e = SSL_get_error(Ssl, n);
+    LogE("SSL_read() returned error %s", SslError(e).c_str());
+    CloseNotify = false;
+    return -1;
   }
   return n;
 }
@@ -211,6 +211,16 @@ SKT_ERROR SSLSocket::GetError(int ret) const
   case SSL_ERROR_WANT_WRITE:
   case SSL_ERROR_WANT_READ:
     return SKT_ERROR::WOULDBLOCK;
+
+  case SSL_ERROR_SYSCALL:
+#ifdef _WIN32
+    if (::GetLastError() == WSAEWOULDBLOCK)
+      return SKT_ERROR::WOULDBLOCK;
+#else
+    if (errno == EWOULDBLOCK)
+      return SKT_ERROR::WOULDBLOCK;
+#endif
+    break;
 
   default:
     break;

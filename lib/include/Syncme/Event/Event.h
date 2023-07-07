@@ -60,7 +60,7 @@ namespace Syncme
     friend STATE Syncme::GetEventState(HEvent event);
 
     virtual uint32_t RegisterWait(TWaitComplete complete);
-    bool UnregisterWait(uint32_t cookie);
+    virtual bool UnregisterWait(uint32_t cookie);
 
     void AddRef(Event* dup);
     void RemoveRef(Event* dup);

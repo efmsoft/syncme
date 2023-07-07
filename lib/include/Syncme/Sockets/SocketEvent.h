@@ -15,6 +15,8 @@ namespace Syncme
   {
     struct SocketEvent : public Event
     {
+      friend class WaitThread;
+
       int Socket;
       int EventMask;
 
@@ -22,10 +24,7 @@ namespace Syncme
       int Events;
 
 #ifdef _WIN32
-      void* UnregisterDone;
       void* WSAEvent;
-      void* WaitObject;
-      bool Revoked;
 #endif
 
     public:
@@ -38,6 +37,7 @@ namespace Syncme
       void OnCloseHandle() override;
       bool Wait(uint32_t ms) override;
       uint32_t RegisterWait(TWaitComplete complete) override;
+      bool UnregisterWait(uint32_t cookie) override;
       uint32_t Signature() const override;
       static bool IsSocketEvent(HEvent h);
 
@@ -46,8 +46,6 @@ namespace Syncme
 #endif
       
     private:
-      void Update();
-
 #ifdef _WIN32
       static void __stdcall WaitOrTimerCallback(
         void* lpParameter

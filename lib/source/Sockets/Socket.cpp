@@ -251,9 +251,7 @@ int Socket::WaitRxReady(int timeout)
   auto start = GetTimeInMillisec();
   EventArray events(Pair->GetExitEvent(), Pair->GetCloseEvent(), RxEvent, BreakRead);
 
-  const uint64_t restart = 40;
-
-  for (;;)
+  for (int loops = 0;; ++loops)
   {
     auto t = GetTimeInMillisec();
     uint32_t milliseconds = FOREVER;
@@ -267,8 +265,6 @@ int Socket::WaitRxReady(int timeout)
       }
 
       milliseconds = uint32_t(start + timeout - t);
-      if (milliseconds > restart)
-        milliseconds = restart;
     }
 
     auto rc = WaitForMultipleObjects(events, false, milliseconds);
@@ -373,6 +369,25 @@ int Socket::Write(const void* buffer, size_t size, int timeout)
     }
   }
   return n;
+}
+
+void Socket::Unread(const char* p, size_t n)
+{
+  PacketPtr packet = std::make_shared<Packet>(n);
+  memcpy(&(*packet.get())[0], p, n);
+  Packets.push_back(packet);
+}
+
+int Socket::ReadPacket(void* buffer, size_t size)
+{
+  if (Packets.empty())
+    return 0;
+  
+  PacketPtr p = Packets.front();
+  Packets.pop_front();
+
+  memcpy(buffer, &(*p.get())[0], int(p->size()));
+  return int(p->size());
 }
 
 bool Socket::InitPeer()
