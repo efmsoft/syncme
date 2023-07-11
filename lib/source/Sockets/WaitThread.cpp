@@ -1,6 +1,7 @@
 #include <cassert>
 
 #include <Syncme/Logger/Log.h>
+#include <Syncme/SetThreadName.h>
 #include <Syncme/Sockets/WaitThread.h>
 #include <Syncme/Sockets/SocketEvent.h>
 
@@ -169,6 +170,8 @@ void WaitThread::TriggerEvent(HANDLE h)
 
 void WaitThread::Worker()
 {
+  SET_CUR_THREAD_NAME("WaitThread");
+
   while (true)
   {
     std::vector<HANDLE> object;
