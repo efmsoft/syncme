@@ -130,7 +130,7 @@ bool Socket::SetOptions()
   int sndbuf = 0;
   len = sizeof(sndbuf);
   getsockopt(Handle, SOL_SOCKET, SO_SNDBUF, (char*)&sndbuf, &len);
-  LogI("Initial size of buffers rcv=%i, snd=%i", rcvbuf, sndbuf);
+  LogI("%s: Initial size of buffers rcv=%i, snd=%i", Pair->WhoAmI(this), rcvbuf, sndbuf);
 
   int rcvsize = config->GetInt("rcvbuf", rcvbuf);
   if (rcvsize != rcvbuf)
@@ -141,7 +141,7 @@ bool Socket::SetOptions()
       return false;
     }
 
-    LogI("new size of rcv buffer is %i", rcvsize);
+    LogI("%s: new size of rcv buffer is %i", Pair->WhoAmI(this), rcvsize);
   }
 
   int sndsize = config->GetInt("sndbuf", sndbuf);
@@ -153,7 +153,7 @@ bool Socket::SetOptions()
       return false;
     }
 
-    LogI("new size of snd buffer is %i", sndsize);
+    LogI("%s: new size of snd buffer is %i", Pair->WhoAmI(this), sndsize);
   }
 
   if (config->GetBool("tcp-nodelay", true))
@@ -165,11 +165,11 @@ bool Socket::SetOptions()
       return false;
     }
 
-    LogI("TCP_NODELAY was set to true");
+    LogI("%s: TCP_NODELAY was set to true", Pair->WhoAmI(this));
   }
 
 #ifdef _WIN32
-  ULONG delay = (ULONG)config->GetInt("keepalive-delay", 45000);
+  ULONG delay = (ULONG)config->GetInt("keepalive-delay", 15000);
   if (delay)
   {
     struct tcp_keepalive keepalive_vals = {
@@ -197,7 +197,7 @@ bool Socket::SetOptions()
       return false;
     }
 
-    LogI("keepalive-delay set to %i ms", int(delay));
+    LogI("%s: keepalive-delay set to %i ms", Pair->WhoAmI(this), int(delay));
   }
 #endif
   return true;
@@ -308,6 +308,8 @@ int Socket::WaitRxReady(int timeout)
       LogW("%s: peer disconnected. timeout %i -> %i", Pair->WhoAmI(this), tout, timeout);
 
       // We have to drain input buffer before closing socket
+      // Wait up to PeerDisconnected() ms from this moment
+      start = GetTimeInMillisec();
     }
 
     if (netev & EVENT_READ)
