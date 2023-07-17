@@ -2,6 +2,8 @@
 
 #include <Syncme/Sockets/SocketError.h>
 
+#include <cstring>
+
 using namespace Syncme;
 
 SocketError::SocketError()
