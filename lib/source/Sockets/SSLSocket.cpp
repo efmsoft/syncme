@@ -117,89 +117,121 @@ void SSLSocket::Shutdown()
   }
 }
 
+int SSLSocket::ReadPending(void* buffer, size_t size)
+{
+  std::lock_guard<std::mutex> guard(SslLock);
+
+  if (!SSL_has_pending(Ssl))
+    return 0;
+  
+  int n = SSL_read(Ssl, buffer, int(size));
+
+  // Note that it is possible for SSL_has_pending() to return 1, 
+  // and then a subsequent call to SSL_read_ex() or SSL_read() to 
+  // return no data because the unprocessed buffered data when processed 
+  // yielded no application data (for example this can happen during 
+  // renegotiation). It is also possible in this scenario for 
+  // SSL_has_pending() to continue to return 1 even after an SSL_read_ex() 
+  // or SSL_read() call because the buffered and unprocessed data is not yet 
+  // processable (e.g. because OpenSSL has only received a partial record so far).
+
+  // if n == 0, wait for data during 'timeout'
+
+  if (n < 0)
+    return TranslateSSLError(n, "SSL_read");
+
+  SKT_SET_LAST_ERROR(NONE);
+  return n;
+}
+
 int SSLSocket::Read(void* buffer, size_t size, int timeout)
 {
+  SKT_SET_LAST_ERROR(NONE);
+
   int n = ReadPacket(buffer, size);
   if (n)
     return n;
 
-  do
+  for (auto start = GetTimeInMillisec();;)
   {
-    if (true)
-    {
-      std::lock_guard<std::mutex> guard(SslLock);
-
-      if (SSL_has_pending(Ssl))
-      {
-        n = SSL_read(Ssl, buffer, int(size));
-
-        // Note that it is possible for SSL_has_pending() to return 1, 
-        // and then a subsequent call to SSL_read_ex() or SSL_read() to 
-        // return no data because the unprocessed buffered data when processed 
-        // yielded no application data (for example this can happen during 
-        // renegotiation). It is also possible in this scenario for 
-        // SSL_has_pending() to continue to return 1 even after an SSL_read_ex() 
-        // or SSL_read() call because the buffered and unprocessed data is not yet 
-        // processable (e.g. because OpenSSL has only received a partial record so far).
-
-        // if n == 0, wait for data during 'timeout'
-        if (n > 0)
-          break;
-
-        if (n < 0)
-        {
-          auto err = GetError(n);
-          if (err == SKT_ERROR::NONE || err == SKT_ERROR::WOULDBLOCK)
-            break;
-
-          int e = SSL_get_error(Ssl, n);
-          LogE("SSL_read() returned error %s", SslError(e).c_str());
-          CloseNotify = false;
-          return -1;
-         
-        }
-      }
-    }
-
-    n = WaitRxReady(timeout);
-    if (n <= 0)
+    n = ReadPending(buffer, size);
+    if (n != 0)                             // If error or we read some data
       return n;
 
-    std::lock_guard<std::mutex> guard(SslLock);
-    n = SSL_read(Ssl, buffer, int(size));
-
-  } while (false);
-
-  if (n == 0 && Peer.Disconnected)
-  {
-    SetLastError(Peer.Disconnected ? SKT_ERROR::GRACEFUL_DISCONNECT : SKT_ERROR::NONE);
-    return 0;
-  }
-
-  if (n == -1)
-  {
-    auto err = GetError(n);
-    if (err == SKT_ERROR::NONE || err == SKT_ERROR::WOULDBLOCK)
+    uint32_t ms = FOREVER;
+    if (timeout != FOREVER)
     {
-      SetLastError(Peer.Disconnected ? SKT_ERROR::GRACEFUL_DISCONNECT : SKT_ERROR::NONE);
+      auto t = GetTimeInMillisec();
+
+      if (t - start > timeout)
+      {
+        SKT_SET_LAST_ERROR(TIMEOUT);
+        return 0;
+      }
+
+      ms = uint32_t(start + timeout - t);
+    }
+
+    n = WaitRxReady(ms);
+    LogI("WaitRxReady returned %i %s", n, GetLastError().Format().c_str());
+
+    if (n < 0)
+      return n;
+
+    if (n == 0)
+    {
+      auto& e = LastError;
+      assert(e == SKT_ERROR::NONE || e == SKT_ERROR::TIMEOUT || e == SKT_ERROR::GRACEFUL_DISCONNECT);
       return 0;
     }
 
-    int e = SSL_get_error(Ssl, n);
-    LogE("SSL_read() returned error %s", SslError(e).c_str());
-    CloseNotify = false;
-    return -1;
+    std::lock_guard<std::mutex> guard(SslLock);
+    n = SSL_read(Ssl, buffer, int(size));
+    n = TranslateSSLError(n, "SSL_read");
+
+    if (n != 0)
+      break;
+
+    if (Peer.Disconnected)
+    {
+      SKT_SET_LAST_ERROR(GRACEFUL_DISCONNECT);
+      break;
+    }
   }
+
   return n;
 }
 
 int SSLSocket::InternalWrite(const void* buffer, size_t size, int timeout)
 {
   std::lock_guard<std::mutex> guard(SslLock);
-  return SSL_write(Ssl, buffer, int(size));
+
+  int n = SSL_write(Ssl, buffer, int(size));
+  return TranslateSSLError(n, "SSL_write");
 }
 
-SKT_ERROR SSLSocket::GetError(int ret) const
+int SSLSocket::TranslateSSLError(int n, const char* method)
+{
+  if (n >= 0)
+  {
+    SKT_SET_LAST_ERROR(NONE);
+    return n;
+  }
+
+  auto err = Ossl2SktError(n);
+  SKT_SET_LAST_ERROR2(err);
+
+  if (err == SKT_ERROR::NONE || err == SKT_ERROR::WOULDBLOCK)
+    return 0;
+
+  int e = SSL_get_error(Ssl, n);
+  LogE("%s returned error %s: %s", method, SslError(e).c_str(), GetBioError().c_str());
+
+  CloseNotify = false;
+  return n;
+}
+
+SKT_ERROR SSLSocket::Ossl2SktError(int ret) const
 {
   int err = SSL_get_error(Ssl, ret);
   switch (err)
@@ -225,6 +257,7 @@ SKT_ERROR SSLSocket::GetError(int ret) const
   default:
     break;
   }
+
   return SKT_ERROR::GENERIC;
 }
 
@@ -241,7 +274,7 @@ void SSLSocket::LogIoError(const char* fn, const char* text)
     , "%s%s. Error: %s"
     , fn 
     , text
-    , GetBioError().c_str()
+    , GetLastError().Format().c_str()
   );
 #endif
 }

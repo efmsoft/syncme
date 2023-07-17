@@ -19,7 +19,7 @@ namespace Syncme
     int Read(void* buffer, size_t size, int timeout) override;
     void Shutdown() override;
 
-    SKT_ERROR GetError(int ret) const override;
+    virtual SKT_ERROR Ossl2SktError(int ret) const override;
     int GetFD() const override;
     void LogIoError(const char* fn, const char* text) override;
 

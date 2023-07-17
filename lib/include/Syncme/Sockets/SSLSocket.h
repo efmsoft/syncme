@@ -17,11 +17,13 @@ namespace Syncme
     int Read(void* buffer, size_t size, int timeout) override;
     void Shutdown() override;
 
-    SKT_ERROR GetError(int ret) const override;
+    SKT_ERROR Ossl2SktError(int ret) const override;
     int GetFD() const override;
     void LogIoError(const char* fn, const char* text) override;
 
   private:
     int InternalWrite(const void* buffer, size_t size, int timeout) override;
+    int ReadPending(void* buffer, size_t size);
+    int TranslateSSLError(int n, const char* method);
   };
 }

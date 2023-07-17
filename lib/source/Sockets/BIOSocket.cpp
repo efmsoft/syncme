@@ -4,6 +4,7 @@
 #include <Syncme/Sockets/API.h>
 #include <Syncme/Sockets/BIOSocket.h>
 #include <Syncme/Sockets/SocketPair.h>
+#include <Syncme/TickCount.h>
 
 using namespace Syncme;
 
@@ -49,51 +50,74 @@ void BIOSocket::Shutdown()
 
 int BIOSocket::InternalRead(void* buffer, size_t size, int timeout)
 {
+  SKT_SET_LAST_ERROR(NONE);
+
   std::lock_guard<std::mutex> guard(BioLock);
   int n = BIO_read(Bio, buffer, int(size));
 
-  if (n <= 0)
+  if (n == 0)
+  {
+    SKT_SET_LAST_ERROR(WOULDBLOCK);
+    return 0;
+  }
+
+  if (n < 0)
   {
     if (BIO_should_retry(Bio))
     {
-      if (BIO_should_read(Bio) || BIO_should_write(Bio) || BIO_should_io_special(Bio))
-      {
-        SetLastError(Peer.Disconnected ? SKT_ERROR::GRACEFUL_DISCONNECT : SKT_ERROR::TIMEOUT);
-        if (n < 0)
-          n = 0;
-      }
-      else
-      {
-        SetLastError(SKT_ERROR::IO_INCOMPLETE);
-        CloseNotify = false;
-        n = -1;
-      }
+      SKT_SET_LAST_ERROR(WOULDBLOCK);
+      return 0;
     }
-    else
-    {
-      SetLastError(SKT_ERROR::IO_INCOMPLETE);
-      CloseNotify = false;
-      n = -1;
-    }
+
+    SKT_SET_LAST_ERROR(IO_INCOMPLETE);
+    CloseNotify = false;
+    n = -1;
   }
+
   return n;
 }
 
 int BIOSocket::Read(void* buffer, size_t size, int timeout)
 {
+  SKT_SET_LAST_ERROR(NONE);
+
   int n = ReadPacket(buffer, size);
   if (n)
     return n;
 
-  n = InternalRead(buffer, size, timeout);
-  if (n > 0 || n < 0)
-    return n;
+  for (auto start = GetTimeInMillisec();;)
+  {
+    uint32_t ms = FOREVER;
+    if (timeout != FOREVER)
+    {
+      auto t = GetTimeInMillisec();
 
-  n = WaitRxReady(timeout);
-  if (n <= 0)
-    return n;
+      if (t - start > timeout)
+      {
+        SKT_SET_LAST_ERROR(TIMEOUT);
+        return 0;
+      }
 
-  return InternalRead(buffer, size, timeout);
+      ms = uint32_t(start + timeout - t);
+    }
+
+    n = WaitRxReady(ms);
+    if (n < 0)
+      return n;
+
+    if (n == 0)
+    {
+      auto& e = LastError;
+      assert(e == SKT_ERROR::NONE || e == SKT_ERROR::TIMEOUT || e == SKT_ERROR::GRACEFUL_DISCONNECT);
+      return 0;
+    }
+
+    n = InternalRead(buffer, size, ms);
+    if (n != 0)
+      break;
+  }
+
+  return n;
 }
 
 int BIOSocket::InternalWrite(const void* buffer, size_t size, int timeout)
@@ -101,30 +125,25 @@ int BIOSocket::InternalWrite(const void* buffer, size_t size, int timeout)
   std::lock_guard<std::mutex> guard(BioLock);
   int n = BIO_write(Bio, buffer, int(size));
 
-  if (n <= 0)
+  if (n == 0)
+  {
+    SKT_SET_LAST_ERROR(WOULDBLOCK);
+    return 0;
+  }
+
+  if (n < 0)
   {
     if (BIO_should_retry(Bio))
     {
-      if (BIO_should_read(Bio) || BIO_should_write(Bio) || BIO_should_io_special(Bio))
-      {
-        SetLastError(Peer.Disconnected ? SKT_ERROR::GRACEFUL_DISCONNECT : SKT_ERROR::TIMEOUT);
-        if (n < 0)
-          n = 0;
-      }
-      else
-      {
-        SetLastError(SKT_ERROR::IO_INCOMPLETE);
-        CloseNotify = false;
-        n = -1;
-      }
+      SKT_SET_LAST_ERROR(WOULDBLOCK);
+      return 0;
     }
-    else
-    {
-      SetLastError(SKT_ERROR::IO_INCOMPLETE);
-      CloseNotify = false;
-      n = -1;
-    }
+
+    SKT_SET_LAST_ERROR(IO_INCOMPLETE);
+    CloseNotify = false;
+    n = -1;
   }
+
   return n;
 }
 
@@ -136,7 +155,7 @@ int BIOSocket::GetFD() const
   return socket;
 }
 
-SKT_ERROR BIOSocket::GetError(int ret) const
+SKT_ERROR BIOSocket::Ossl2SktError(int ret) const
 {
   return GetLastError();
 }
@@ -154,7 +173,7 @@ void BIOSocket::LogIoError(const char* fn, const char* text)
     , "%s%s. Error: %s"
     , fn
     , text
-    , GetLastErrorStr().c_str()
+    , GetLastError().Format().c_str()
   );
 #endif
 }

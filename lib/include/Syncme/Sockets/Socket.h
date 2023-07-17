@@ -9,31 +9,22 @@
 #include <Syncme/CritSection.h>
 #include <Syncme/Logger/Channel.h>
 #include <Syncme/Sockets/ErrorLimit.h>
+#include <Syncme/Sockets/SocketError.h>
 #include <Syncme/Sync.h>
 
 namespace Syncme
 {
   struct SocketPair;
 
-  enum class SKT_ERROR  
-  {
-    NONE,
-
-    TIMEOUT,
-    GRACEFUL_DISCONNECT,
-    WOULDBLOCK,
-    IO_INCOMPLETE,
-    CONNECTION_ABORTED,
-    GENERIC,
-  };
-
   struct ConnectedPeer
   {
     std::string IP;
     int Port;
-    bool Disconnected;
 
-    ConnectedPeer() : Port(0), Disconnected(false)
+    bool Disconnected;
+    uint64_t When;
+
+    ConnectedPeer() : Port(0), Disconnected(false), When(0)
     {
     }
   };
@@ -54,7 +45,7 @@ namespace Syncme
     bool CloseNotify;
     bool BlockingMode;
 
-    SKT_ERROR LastError;
+    SocketError LastError;
     std::map<int, ErrorLimitPtr> Limits;
 
     typedef std::vector<char> Packet;
@@ -76,6 +67,7 @@ namespace Syncme
     
     bool IsAttached() const;
     bool PeerDisconnected() const;
+    bool ReadPeerDisconnected();
 
     int Read(std::vector<char>& buffer, int timeout = FOREVER);
     virtual int Read(void* buffer, size_t size, int timeout = FOREVER) = 0;
@@ -85,7 +77,7 @@ namespace Syncme
     int Write(const void* buffer, size_t size, int timeout = FOREVER);
 
     virtual int GetFD() const = 0;
-    virtual SKT_ERROR GetError(int ret) const = 0;
+    virtual SKT_ERROR Ossl2SktError(int ret) const = 0;
     virtual void LogIoError(const char* fn, const char* text) = 0;
 
     bool InitPeer();
@@ -94,9 +86,8 @@ namespace Syncme
     void AddLimit(int code, size_t count, uint64_t duration);
     bool ReportError(int code);
 
-    void SetLastError(SKT_ERROR e);
-    SKT_ERROR GetLastError() const;
-    std::string GetLastErrorStr() const;
+    void SetLastError(SKT_ERROR e, const char* file, int line);
+    const SocketError& GetLastError() const;
 
   protected:
     virtual bool SetOptions();
@@ -119,3 +110,8 @@ namespace Syncme
 #define RX_ZERO_RETURN(n) \
   ((n) == 0 && (GetLastError() == SKT_ERROR::TIMEOUT || GetLastError() == SKT_ERROR::NONE)) 
 
+#define SKT_SET_LAST_ERROR(e) \
+  SetLastError(SKT_ERROR::e, __FILE__, __LINE__) 
+
+#define SKT_SET_LAST_ERROR2(e) \
+  SetLastError(e, __FILE__, __LINE__) 

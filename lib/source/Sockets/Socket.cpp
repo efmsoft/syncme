@@ -23,7 +23,6 @@ Socket::Socket(SocketPair* pair, int handle, bool enableClose)
   , Configured(false)
   , CloseNotify(true)
   , BlockingMode(true)
-  , LastError(SKT_ERROR::NONE)
 {
 }
 
@@ -35,12 +34,12 @@ Socket::~Socket()
   CloseHandle(BreakRead);
 }
 
-void Socket::SetLastError(SKT_ERROR e)
+void Socket::SetLastError(SKT_ERROR e, const char* file, int line)
 {
-  LastError = e;
+  LastError.Set(e, file, line);
 }
 
-SKT_ERROR Socket::GetLastError() const
+const SocketError& Socket::GetLastError() const
 {
   return LastError;
 }
@@ -66,6 +65,12 @@ bool Socket::IsAttached() const
 bool Socket::PeerDisconnected() const
 {
   return Peer.Disconnected;
+}
+
+bool Socket::ReadPeerDisconnected()
+{
+  WaitRxReady(0);
+  return PeerDisconnected();
 }
 
 bool Socket::Attach(int socket, bool enableClose)
@@ -248,6 +253,10 @@ int Socket::WaitRxReady(int timeout)
 {
   assert(RxEvent);
 
+  const int LITTLE_WAIT = 10;
+  if (Peer.Disconnected)
+    timeout = LITTLE_WAIT;
+
   auto start = GetTimeInMillisec();
   EventArray events(Pair->GetExitEvent(), Pair->GetCloseEvent(), RxEvent, BreakRead);
 
@@ -260,7 +269,7 @@ int Socket::WaitRxReady(int timeout)
     {
       if (t - start >= timeout)
       {
-        SetLastError(SKT_ERROR::TIMEOUT);
+        SKT_SET_LAST_ERROR2(Peer.Disconnected ? SKT_ERROR::GRACEFUL_DISCONNECT : SKT_ERROR::TIMEOUT);
         return 0;
       }
 
@@ -270,13 +279,14 @@ int Socket::WaitRxReady(int timeout)
     auto rc = WaitForMultipleObjects(events, false, milliseconds);
     if (rc == WAIT_RESULT::OBJECT_0 || rc == WAIT_RESULT::OBJECT_1)
     {
-      SetLastError(SKT_ERROR::CONNECTION_ABORTED);
+      SKT_SET_LAST_ERROR(CONNECTION_ABORTED);
       return -1;
     }
 
     if (rc == WAIT_RESULT::OBJECT_3)
     {
-      SetLastError(SKT_ERROR::NONE);
+      LogI("Break read");
+      SKT_SET_LAST_ERROR(NONE);
       return 0;
     }
 
@@ -285,7 +295,7 @@ int Socket::WaitRxReady(int timeout)
       t = GetTimeInMillisec();
       if (t - start >= timeout)
       {
-        SetLastError(Peer.Disconnected ? SKT_ERROR::GRACEFUL_DISCONNECT : SKT_ERROR::TIMEOUT);
+        SKT_SET_LAST_ERROR2(Peer.Disconnected ? SKT_ERROR::GRACEFUL_DISCONNECT : SKT_ERROR::TIMEOUT);
         return 0;
       }
 
@@ -294,27 +304,29 @@ int Socket::WaitRxReady(int timeout)
 
     if (rc == WAIT_RESULT::FAILED)
     {
-      SetLastError(SKT_ERROR::CONNECTION_ABORTED);
-      return 0;
+      SKT_SET_LAST_ERROR(CONNECTION_ABORTED);
+      return -1;
     }
 
     int netev = GetSocketEvents(RxEvent);
     if (netev & EVENT_CLOSE)
     {
       Peer.Disconnected = true;
+      Peer.When = GetTimeInMillisec();
 
       int tout = timeout;
-      timeout = Pair->PeerDisconnected();
+      timeout = 0;
+      
       LogW("%s: peer disconnected. timeout %i -> %i", Pair->WhoAmI(this), tout, timeout);
 
       // We have to drain input buffer before closing socket
-      // Wait up to PeerDisconnected() ms from this moment
-      start = GetTimeInMillisec();
     }
 
     if (netev & EVENT_READ)
       break;
   }
+
+  SKT_SET_LAST_ERROR(NONE);
   return 1;
 }
 
@@ -349,14 +361,17 @@ int Socket::Write(const void* buffer, size_t size, int timeout)
     if (n >= 0)
       break;
 
-    SKT_ERROR e = GetError(n);
+    SKT_ERROR e = Ossl2SktError(n);
     if (e != SKT_ERROR::WOULDBLOCK)
+    {
+      SKT_SET_LAST_ERROR2(e);
       return n;
+    }
 
     auto rc = WaitForMultipleObjects(events, false, 10);
     if (rc == WAIT_RESULT::OBJECT_0 || rc == WAIT_RESULT::OBJECT_1)
     {
-      SetLastError(SKT_ERROR::CONNECTION_ABORTED);
+      SKT_SET_LAST_ERROR(CONNECTION_ABORTED);
       return -1;
     }
 
@@ -365,11 +380,13 @@ int Socket::Write(const void* buffer, size_t size, int timeout)
       auto t = GetTimeInMillisec() - start;
       if (t > timeout)
       {
-        SetLastError(SKT_ERROR::TIMEOUT);
+        SKT_SET_LAST_ERROR(TIMEOUT);
         return 0;
       }
     }
   }
+  
+  SKT_SET_LAST_ERROR(NONE);
   return n;
 }
 
@@ -385,6 +402,8 @@ int Socket::ReadPacket(void* buffer, size_t size)
   if (Packets.empty())
     return 0;
   
+  SKT_SET_LAST_ERROR(NONE);
+
   PacketPtr p = Packets.front();
   Packets.pop_front();
 
@@ -508,23 +527,4 @@ bool Socket::ReportError(int code)
     return false;
 
   return it->second->ReportError();
-}
-
-std::string Socket::GetLastErrorStr() const
-{
-  switch (LastError)
-  {
-    case SKT_ERROR::NONE: return "NONE";
-    case SKT_ERROR::TIMEOUT: return "TIMEOUT";
-    case SKT_ERROR::GRACEFUL_DISCONNECT: return "GRACEFUL_DISCONNECT";
-    case SKT_ERROR::WOULDBLOCK: return "WOULDBLOCK";
-    case SKT_ERROR::IO_INCOMPLETE: return "IO_INCOMPLETE";
-    case SKT_ERROR::CONNECTION_ABORTED: return "CONNECTION_ABORTED";
-    case SKT_ERROR::GENERIC: return "GENERIC";
-    default:
-      break;
-  }
-
-  assert(!"unsupported error code");
-  return std::string();
 }
