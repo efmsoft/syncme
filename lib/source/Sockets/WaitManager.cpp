@@ -6,6 +6,8 @@
 #include <Syncme/Sockets/WaitThread.h>
 #include <Syncme/Uninitialize.h>
 
+#ifdef _WIN32
+
 using namespace Syncme;
 using namespace Syncme::Implementation;
 
@@ -62,3 +64,12 @@ void Syncme::Implementation::WaitManager::RemoveSocketEvent(SocketEvent* e)
     break;
   }
 }
+#else
+void Syncme::Implementation::WaitManager::AddSocketEvent(SocketEvent* e)
+{
+}
+
+void Syncme::Implementation::WaitManager::RemoveSocketEvent(SocketEvent* e)
+{
+}
+#endif
