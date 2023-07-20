@@ -173,7 +173,6 @@ int SSLSocket::Read(void* buffer, size_t size, int timeout)
     }
 
     n = WaitRxReady(ms);
-    LogI("WaitRxReady returned %i %s", n, GetLastError().Format().c_str());
 
     if (n < 0)
       return n;

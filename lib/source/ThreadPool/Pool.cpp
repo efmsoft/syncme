@@ -1,5 +1,6 @@
 #include <cassert>
 
+#include <Syncme/Logger/Log.h>
 #include <Syncme/ProcessThreadId.h>
 #include <Syncme/Sleep.h>
 #include <Syncme/ThreadPool/Pool.h>
@@ -195,7 +196,7 @@ HEvent Pool::Run(TCallback cb, uint64_t* pid)
   WorkerPtr t;
   EventArray ev(StopEvent, FreeEvent);
 
-  while (!Stopping)
+  for (int loop = 0; !Stopping; ++loop)
   {
     size_t allSize{};
     t = PopUnused(allSize);
@@ -215,7 +216,14 @@ HEvent Pool::Run(TCallback cb, uint64_t* pid)
         auto rc = WaitForMultipleObjects(ev, false);
         if (rc == WAIT_RESULT::OBJECT_0)
         {
-          LockedInRun += t0.ElapsedSince();
+          auto e = t0.ElapsedSince();
+          LockedInRun += e;
+
+          if (e > 200)
+          {
+            LogW("loops=%i, spent=%lli, total=%lli, threads=%lli", loop, e, (int64_t)LockedInRun, allSize);
+          }
+
           return nullptr;
         }
 
