@@ -352,13 +352,15 @@ int Socket::Write(const std::vector<char>& arr, int timeout)
 
 int Socket::Write(const void* buffer, size_t size, int timeout)
 {
+  assert(size > 0);
+
   int n = 0;
   EventArray events(Pair->GetExitEvent(), Pair->GetCloseEvent());
 
   for (auto start = GetTimeInMillisec();;)
   {
     n = InternalWrite(buffer, size, timeout);
-    if (n >= 0)
+    if (n > 0)
       break;
 
     SKT_ERROR e = Ossl2SktError(n);
