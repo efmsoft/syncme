@@ -39,7 +39,7 @@ void SSLSocket::Shutdown()
     return;
 
   auto start = GetTimeInMillisec();
-  const uint64_t limit = 3000;
+  const uint64_t limit = 100;
 
   const char* whoami = Pair->WhoAmI(this);
 
@@ -102,6 +102,20 @@ void SSLSocket::Shutdown()
     // It can also occur if action is need to continue the operation 
     // for non - blocking BIOs. Call SSL_get_error() with the return 
     // value ret to find out the reason.
+
+    if (e == SSL_ERROR_WANT_READ)
+    {
+      char buffer[64 * 1024]{};
+
+      std::lock_guard<std::mutex> guard(SslLock);
+      int n = SSL_read(Ssl, buffer, int(sizeof(buffer)));
+
+      if (n > 0)
+      {
+        LogE("Peer sent %i bytes of data during shutdown", n);
+      }
+    }
+
 
     bool err =
       e != SSL_ERROR_NONE
