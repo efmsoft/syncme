@@ -28,7 +28,8 @@ bool BIOSocket::Attach(int socket, bool enableClose)
   if (!f)
     return false;
 
-  assert(Bio == nullptr);
+  if (Bio)
+    BIO_free(Bio);
 
   Bio = BIO_new_socket(int(Handle), BIO_NOCLOSE);
   if (!Bio)
