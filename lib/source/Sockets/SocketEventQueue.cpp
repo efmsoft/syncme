@@ -310,7 +310,6 @@ bool SocketEventQueue::RemoveSocketEvent(SocketEvent* socketEvent)
 bool SocketEventQueue::Empty()
 {
   auto guard = DataLock.Lock();
-
   return Queue.empty();
 }
 
@@ -318,44 +317,41 @@ bool SocketEventQueue::Empty()
 void SocketEventQueue::FireEvents(const epoll_event& e)
 {
   auto guard = DataLock.Lock();
-
-  for (auto p : Queue)
+  
+  SocketEvent* p = (SocketEvent*)e.data.ptr;
+  if (p != nullptr)
   {
-    if (e.data.fd == p->Socket)
-    {
-      int events = 0;
+    int events = 0;
 
-      if (e.events & EPOLLIN)
-        events |= EVENT_READ;
+    if (e.events & EPOLLIN)
+      events |= EVENT_READ;
 
-      if (e.events & EPOLLOUT)
-        events |= EVENT_WRITE;
+    if (e.events & EPOLLOUT)
+      events |= EVENT_WRITE;
 
-      if (e.events & EPOLLRDHUP)
-        events |= EVENT_CLOSE;
+    if (e.events & EPOLLRDHUP)
+      events |= EVENT_CLOSE;
 
+    if (events)
       p->FireEvents(events);
-      break;
-    }
   }
 }
 
 bool SocketEventQueue::ProcessEvents(int n)
 {
   std::string command;
-
   for (int i = 0; i < n; i++)
   {
     auto& e = Events[i];
     if (e.data.fd == ControlSocket)
     {
-      char buffer[512]{};
+      char buffer[512] = {'\0'};
       int cb = read(ControlSocket, buffer, sizeof(buffer));
       if (cb == -1)
       {
         LogosE("Failed to read control socket");
       }
-      else
+      else if (cb)
         command = std::string(buffer, cb);
 
       continue;
@@ -400,8 +396,6 @@ void SocketEventQueue::Worker()
 
   while (WaitForSingleObject(EvStop, 0) != WAIT_RESULT::OBJECT_0)
   {
-    memset(&Events[0], 0, sizeof(Events[0]) * Events.size());
-
     int n = epoll_wait(Poll, &Events[0], int(Events.size()), -1);
     if (n < 0 && errno == EINTR)
       n = 0;
