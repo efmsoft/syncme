@@ -394,7 +394,7 @@ void SocketEventQueue::Worker()
 #ifndef _WIN32
   SET_CUR_THREAD_NAME("SktEvQueueWorker");
 
-  while (WaitForSingleObject(EvStop, 0) != WAIT_RESULT::OBJECT_0)
+  while (GetEventState(EvStop) != STATE::SIGNALLED)
   {
     int n = epoll_wait(Poll, &Events[0], int(Events.size()), -1);
     if (n < 0 && errno == EINTR)

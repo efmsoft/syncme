@@ -122,7 +122,7 @@ epoll_event SocketEvent::GetPollEvent() const
 {
   epoll_event ev{};
   ev.data.fd = Socket;
-  ev.data.ptr = this;
+  ev.data.ptr = (void*)this;
 
   if (EventMask & EVENT_READ)
     ev.events |= EPOLLIN;
