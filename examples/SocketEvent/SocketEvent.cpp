@@ -53,6 +53,7 @@ void Server(HEvent readyEvent)
     exit(1);
   }
 
+  printf("server: client connected\n");
   SetEvent(readyEvent);
 
   sockaddr_in peer{};
@@ -83,6 +84,8 @@ void Server(HEvent readyEvent)
   int mask = GetSocketEvents(e);
   assert(mask & EVENT_READ);
 
+  printf("server: socket event was signalled. mask = %i\n", mask);
+
   char buf[256]{};
   if (recv(client, buf, sizeof(buf), 0) == -1)
   {
@@ -93,8 +96,10 @@ void Server(HEvent readyEvent)
   std::string str(buf);
   if (str != "hello")
   {
-    printf("unsupported command!");
+    printf("unsupported command!\n");
   }
+  else
+    printf("server: received hello\n");
 
   // Send it back
   rc = send(client, "hello", 5, 0);
@@ -146,6 +151,8 @@ void Client()
     exit(1);
   }
 
+  printf("client: received %s\n", buf);
+
   closesocket(h);
 }
 
@@ -168,7 +175,7 @@ int main()
   WaitForSingleObject(readyEvent);
 
   Client();
-  printf("done");
+  printf("done\n");
 
 #ifdef _WIN32
   WSACleanup();

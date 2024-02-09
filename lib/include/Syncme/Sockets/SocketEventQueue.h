@@ -11,6 +11,7 @@
 
 #include <Syncme/Sync.h>
 #include <Syncme/Sockets/SocketEvent.h>
+#include <Syncme/Sockets/WaitManager.h>
 
 namespace Syncme
 {
@@ -49,6 +50,7 @@ namespace Syncme
 
     protected:
       friend struct SocketEvent;
+      friend void Syncme::Implementation::WaitManager::AddSocketEvent(SocketEvent* e);
       friend HEvent Syncme::CreateSocketEvent(int socket, int eventMask);
       static SocketEventQueuePtr& Ptr();
 

@@ -115,8 +115,8 @@ TEST(Pool, complex)
     EXPECT_EQ(v, c++);
   }
 
-  printf("ThreadsStopped: %llu\n", (uint64_t)ThreadsStopped);
-  printf("WorkersDescructed: %llu\n", (uint64_t)WorkersDescructed);
-  printf("LockedInRun: %llu\n", (uint64_t)LockedInRun);
-  printf("Errors: %llu\n", (uint64_t)Errors);
+  printf("ThreadsStopped: %llu\n", (long long)ThreadsStopped);
+  printf("WorkersDescructed: %llu\n", (long long)WorkersDescructed);
+  printf("LockedInRun: %llu\n", (long long)LockedInRun);
+  printf("Errors: %llu\n", (long long)Errors);
 }
