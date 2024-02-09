@@ -219,7 +219,7 @@ SocketEventQueue::ADD_EVENT_RESULT SocketEventQueue::Append(SocketEvent* socketE
     if (ev.events == 0)
       return ADD_EVENT_RESULT::SUCCESS;
 
-    ev.events |= EPOLLONESHOT;
+    ev.events |= EPOLLONESHOT | EPOLLET;
     if (epoll_ctl(Poll, EPOLL_CTL_ADD, socketEvent->Socket, &ev) == -1)
     {
       LogosE("epoll_ctl(EPOLL_CTL_ADD) failed");
@@ -326,7 +326,7 @@ bool SocketEventQueue::ActivateEvent(SocketEvent* socketEvent)
   if (ev.events == 0)
     return false;
 
-  ev.events |= EPOLLONESHOT;
+  ev.events |= EPOLLONESHOT | EPOLLET;
   if (epoll_ctl(Poll, EPOLL_CTL_MOD, socketEvent->Socket, &ev) == -1)
   {
     LogosE("epoll_ctl(EPOLL_CTL_MOD) failed");
