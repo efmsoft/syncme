@@ -93,13 +93,13 @@ void Server(HEvent readyEvent)
     exit(1);
   }
 
+  printf("server: received %s\n", buf);
+
   std::string str(buf);
   if (str != "hello")
   {
     printf("unsupported command!\n");
   }
-  else
-    printf("server: received hello\n");
 
   // Send it back
   rc = send(client, "hello", 5, 0);
