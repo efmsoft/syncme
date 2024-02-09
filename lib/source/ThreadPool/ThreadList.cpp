@@ -26,8 +26,7 @@ size_t ThreadsList::Update()
     cont = false;
     for (auto it = List.begin(); it != List.end(); ++it)
     {
-      auto rc = WaitForSingleObject(*it, 0);
-      if (rc == WAIT_RESULT::OBJECT_0)
+      if (GetEventState(*it) == STATE::SIGNALLED)
       {
         CloseHandle(*it);
         List.erase(it);
@@ -35,8 +34,6 @@ size_t ThreadsList::Update()
         cont = true;
         break;
       }
-
-      assert(rc == WAIT_RESULT::TIMEOUT);
     }
   }
 
