@@ -327,13 +327,10 @@ bool SocketEventQueue::ActivateEvent(SocketEvent* socketEvent)
     return false;
 
   ev.events |= EPOLLONESHOT;
-  if (epoll_ctl(Poll, EPOLL_CTL_ADD, socketEvent->Socket, &ev) == -1)
+  if (epoll_ctl(Poll, EPOLL_CTL_MOD, socketEvent->Socket, &ev) == -1)
   {
-    if (errno != EEXIST)
-    {
-      LogosE("epoll_ctl(EPOLL_CTL_ADD) failed");
-      return false;
-    }
+    LogosE("epoll_ctl(EPOLL_CTL_MOD) failed");
+    return false;
   }
 
   Queue[socketEvent] = true;

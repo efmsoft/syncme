@@ -3,6 +3,7 @@
 #include <thread>
 
 #include <Syncme/Logger/Log.h>
+#include <Syncme/Sleep.h>
 #include <Syncme/Sockets/API.h>
 #include <Syncme/Sync.h>
 
@@ -87,19 +88,23 @@ void Server(HEvent readyEvent)
   printf("server: socket event was signalled. mask = %i\n", mask);
 
   char buf[256]{};
-  if (recv(client, buf, sizeof(buf), 0) == -1)
+  int n = recv(client, buf, sizeof(buf), 0);
+  if (n <= 0)
   {
     LogosE("recv() failed");
     exit(1);
   }
 
-  printf("server: received %s\n", buf);
+  printf("server: received %i bytes %s\n", n, buf);
 
   std::string str(buf);
   if (str != "hello")
   {
     printf("unsupported command!\n");
   }
+
+  wr = WaitForSingleObject(e, 3000);
+  assert(wr == WAIT_RESULT::TIMEOUT);
 
   // Send it back
   rc = send(client, "hello", 5, 0);
@@ -108,6 +113,19 @@ void Server(HEvent readyEvent)
     LogosE("send() failed");
     exit(1);
   }
+
+  wr = WaitForSingleObject(e);
+  assert(wr == WAIT_RESULT::OBJECT_0);
+
+  *buf = 0;
+  n = recv(client, buf, sizeof(buf), 0);
+  if (n <= 0)
+  {
+    LogosE("recv() failed");
+    exit(1);
+  }
+
+  printf("server: received %i bytes %s\n", n, buf);
 
   CloseHandle(e);
   closesocket(client);
@@ -152,6 +170,15 @@ void Client()
   }
 
   printf("client: received %s\n", buf);
+
+  Sleep(3000);
+
+  rc = send(h, "hello2", 6, 0);
+  if (rc == -1)
+  {
+    LogosE("send() failed");
+    exit(1);
+  }
 
   closesocket(h);
 }
