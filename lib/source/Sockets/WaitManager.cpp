@@ -2,6 +2,7 @@
 #include <list>
 
 #include <Syncme/CritSection.h>
+#include <Syncme/Sockets/SocketEventQueue.h>
 #include <Syncme/Sockets/WaitManager.h>
 #include <Syncme/Sockets/WaitThread.h>
 #include <Syncme/Uninitialize.h>
@@ -67,6 +68,11 @@ void Syncme::Implementation::WaitManager::RemoveSocketEvent(SocketEvent* e)
 #else
 void Syncme::Implementation::WaitManager::AddSocketEvent(SocketEvent* e)
 {
+  auto guard = SocketEventQueue::RemoveLock.Lock();
+  auto& queue = SocketEventQueue::Ptr();
+
+  if (queue)
+    queue->ActivateEvent(e);
 }
 
 void Syncme::Implementation::WaitManager::RemoveSocketEvent(SocketEvent* e)

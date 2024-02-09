@@ -62,7 +62,7 @@ SocketEventQueue::SocketEventQueue(int& rc, unsigned minPort, unsigned maxPort)
 
   if (fcntl(ControlSocket, F_SETFL, O_NONBLOCK) == -1)
   {
-    LogosE("epoll_ctl(EPOLL_CTL_ADD) failed for ControlSocket");
+    LogosE("fcntl failed for ControlSocket");
     return;
   }
 
@@ -219,13 +219,14 @@ SocketEventQueue::ADD_EVENT_RESULT SocketEventQueue::Append(SocketEvent* socketE
     if (ev.events == 0)
       return ADD_EVENT_RESULT::SUCCESS;
 
+    ev.events |= EPOLLONESHOT;
     if (epoll_ctl(Poll, EPOLL_CTL_ADD, socketEvent->Socket, &ev) == -1)
     {
       LogosE("epoll_ctl(EPOLL_CTL_ADD) failed");
       return ADD_EVENT_RESULT::FAILED;
     }
 
-    Queue.push_back(socketEvent);
+    Queue[socketEvent] = true;
 
     if (Thread == nullptr)
       Thread = std::make_shared<std::jthread>(&SocketEventQueue::Worker, this);
@@ -271,7 +272,6 @@ bool SocketEventQueue::AddSocketEvent(SocketEvent* socketEvent)
     if (wr != WAIT_RESULT::OBJECT_1)
       return false;
   }
-
   return false;
 #endif  
 }
@@ -282,14 +282,10 @@ bool SocketEventQueue::RemoveSocketEvent(SocketEvent* socketEvent)
   return false;
 #else
   auto guard = DataLock.Lock();
-
-  auto it = std::find(Queue.begin(), Queue.end(), socketEvent);
-  if (it == Queue.end())
+  if (!Queue.count(socketEvent))
     return false;
 
-  int socket = socketEvent->Socket;
-  epoll_event ev = socketEvent->GetPollEvent();
-  Queue.erase(it);
+  Queue.erase(socketEvent);
 
   // In kernel versions before 2.6.9, the EPOLL_CTL_DEL operation
   // required a non-null pointer in event, even though this argument
@@ -297,12 +293,14 @@ bool SocketEventQueue::RemoveSocketEvent(SocketEvent* socketEvent)
   // when using EPOLL_CTL_DEL. Applications that need to be portable
   // to kernels before 2.6.9 should specify a non-null pointer in
   // event.
+  int socket = socketEvent->Socket;
+  epoll_event ev = socketEvent->GetPollEvent();
+
   if (epoll_ctl(Poll, EPOLL_CTL_DEL, socket, &ev) == -1)
   {
     LogosE("epoll_ctl(EPOLL_CTL_DEL) failed");
     return false;
   }
-
   return true;
 #endif  
 }
@@ -313,14 +311,53 @@ bool SocketEventQueue::Empty()
   return Queue.empty();
 }
 
+bool SocketEventQueue::ActivateEvent(SocketEvent* socketEvent)
+{
+#ifndef _WIN32
+  auto guard = DataLock.Lock();
+  if (!Queue.count(socketEvent))
+    return false;
+
+  // Do nothing if event is already activated
+  if (Queue[socketEvent])
+    return true;
+
+  epoll_event ev = socketEvent->GetPollEvent();
+  if (ev.events == 0)
+    return false;
+
+  ev.events |= EPOLLONESHOT;
+  if (epoll_ctl(Poll, EPOLL_CTL_ADD, socketEvent->Socket, &ev) == -1)
+  {
+    LogosE("epoll_ctl(EPOLL_CTL_ADD) failed");
+    return false;
+  }
+
+  Queue[socketEvent] = true;
+  return true;
+#else
+  return false;
+#endif
+}
+
 #ifndef _WIN32
 void SocketEventQueue::FireEvents(const epoll_event& e)
 {
   auto guard = DataLock.Lock();
-  
+
   SocketEvent* p = (SocketEvent*)e.data.ptr;
   if (p != nullptr)
   {
+    // Ensure that RemoveSocketEvent was not called
+    if (!Queue.count(p))
+      return;
+
+    // Check that event is activated
+    assert(Queue[p] == true);
+
+    // Mark event as removed from wait list
+    Queue[p] = false;
+
     int events = 0;
 
     if (e.events & EPOLLIN)

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <list>
+#include <unordered_map>
 
 #ifndef _WIN32
 #include <sys/epoll.h>
@@ -57,5 +58,6 @@ namespace Syncme
     };
 
     typedef std::list<SocketEvent*> SocketEventList;
+    typedef std::unordered_map<SocketEvent*, bool> SocketEventMap;
   }
 }

@@ -28,7 +28,7 @@ namespace Syncme
       HEvent EvGrowDone;
 
       std::shared_ptr<std::jthread> Thread;
-      SocketEventList Queue;
+      SocketEventMap Queue;
 
 #ifndef _WIN32
       int Poll;
@@ -44,6 +44,8 @@ namespace Syncme
       bool AddSocketEvent(SocketEvent* socketEvent);
       bool RemoveSocketEvent(SocketEvent* socketEvent);
       bool Empty();
+
+      bool ActivateEvent(SocketEvent* socketEvent);
 
     protected:
       friend struct SocketEvent;
