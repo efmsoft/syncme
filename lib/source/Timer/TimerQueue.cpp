@@ -1,5 +1,6 @@
 #include <cassert>
 
+#include <Syncme/SetThreadName.h>
 #include <Syncme/TickCount.h>
 #include <Syncme/Timer/Counter.h>
 #include <Syncme/Timer/TimerQueue.h>
@@ -219,6 +220,7 @@ void TimerQueue::SignallTimers()
 
 void TimerQueue::Worker()
 {
+  SET_CUR_THREAD_NAME("TimerQueue Worker");
   EventArray object(EvStop, EvUpdate);
 
   for (uint64_t dueTime{};;)
