@@ -24,6 +24,7 @@ macro(FindLogme)
   endwhile()
 endmacro()
 
+set(USE_LOGME_SHARED OFF)
 set(USE_LOGME OFF)
 set(LOGME_ROOT "")
 
@@ -33,7 +34,7 @@ if(ENABLE_LOGME)
   endif()
 
   if(LOGME_ROOT STREQUAL "")
-    set(LOGME_ROOT "${CMAKE_CURRENT_LIST_DIR}/out/logme")
+    set(LOGME_ROOT "${CMAKE_SOURCE_DIR}/out/logme")
     if(NOT EXISTS LOGME_ROOT)
       include(FetchContent)
       FetchContent_Declare(logme
@@ -51,7 +52,7 @@ if(NOT LOGME_ROOT STREQUAL "")
   set(USE_LOGME ON)
   set(LOGME_INCLUDE_DIR "${LOGME_ROOT}/logme/include")
 
-  add_compile_definitions(USE_LOGME)
+  add_compile_definitions(USE_LOGME _LOGME_STATIC_BUILD_)
   include_directories(syncme PUBLIC
     ${LOGME_INCLUDE_DIR}
   )

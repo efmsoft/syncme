@@ -1,41 +1,23 @@
-#include <thread>
-
+#include <cassert>
+#include <functional>
 #include <gtest/gtest.h>
 
 #include <Syncme/Logger/Log.h>
-#include <Syncme/ProcessThreadId.h>
-#include <Syncme/SetThreadName.h>
-#include <Syncme/Sleep.h>
 #include <Syncme/Sockets/API.h>
-#include <Syncme/Sockets/SocketPair.h>
 #include <Syncme/ThreadPool/Pool.h>
+#include <Syncme/SetThreadName.h>
+#include <Syncme/Sockets/SocketPair.h>
 
 using namespace Syncme;
 
-static const int ServerPort = 2345;
-static const size_t NumClients = 129; // OPTIONS::GROW_SIZE * 2 + 1
-static const char* Data1 = "Hello";
+static const int ServerPort = 2346;
+static const size_t ChunkSize = 4 * 1024;
+static const size_t DataSize = 512 * 1024;
 
-static void RenameThread(const char* what, size_t index, bool sender)
+static void ServerThread(int client, HEvent dataReadyEvent)
 {
-  uint32_t id = uint32_t(Syncme::GetCurrentThreadId() & 0xFFFFFFFF);
-
-  char buffer[32]{};
-  sprintf(
-    buffer
-    , "%s%s#%zu#%x"
-    , sender ? "*" : ""
-    , what
-    , index
-    , id
-  );
-
-  SET_CUR_THREAD_NAME(buffer);
-}
-
-static void server_thread(int client, size_t index, bool send)
-{
-  RenameThread("st", index, send);
+  SET_CUR_THREAD_NAME("server");
+  printf("Server connection established\n");
 
   Logme::ID ch = CH;
   HEvent exitEvent = CreateNotificationEvent();
@@ -58,36 +40,34 @@ static void server_thread(int client, size_t index, bool send)
     exit(1);
   }
 
-  std::vector<char> buffer(32);
-  int n = pair.Client->Read(buffer);
-  if (n == -1)
-  {
-    LogmeE("Failed to receive client request");
-    exit(1);
-  }
+  // Wait for data from client thread. The client will send 512k of data
+  // Then we will try to read them by 4k chunks
+  WaitForSingleObject(dataReadyEvent, FOREVER);
+  printf("Data ready is signalled\n");
 
-  Syncme::Sleep(rand() % 5000);
-
-  if (send)
+  for (size_t cb = 0; cb < DataSize; cb += ChunkSize)
   {
-    n = pair.Client->WriteStr(Data1);
+    std::vector<char> buffer(ChunkSize);
+    int n = pair.Client->Read(buffer);
     if (n == -1)
     {
-      LogmeE("Failed to send data");
+      LogmeE("Failed to receive client request");
       exit(1);
     }
+
+    assert(n == ChunkSize);
   }
+  
+  printf("All data blocks received\n");
 
   pair.Close();
+  printf("Exiting server connection\n");
 }
 
-static void listener_thread(
-  ThreadPool::Pool& pool
-  , HEvent readyEvent
-  , HEvent serverComplete
-)
+static void ListenerThread(ThreadPool::Pool& pool, HEvent readyEvent, HEvent dataReadyEvent)
 {
   SET_CUR_THREAD_NAME("listener");
+  printf("Listener started\n");
 
   int h = (int)socket(AF_INET, SOCK_STREAM, 0);
   if (h == -1)
@@ -131,36 +111,30 @@ static void listener_thread(
   }
 
   SetEvent(readyEvent);
+  printf("Ready is signalled\n");
+
+  sockaddr_in peer{};
+  socklen_t len = sizeof(peer);
+  int client = (int)accept(h, (sockaddr*)&peer, &len);
+  if (client == -1)
+  {
+    LogosE("accept() failed");
+    exit(1);
+  }
 
   EventArray threads;
-  size_t sender = rand() % NumClients;
-
-  while (threads.size() < NumClients)
-  {
-    sockaddr_in peer{};
-    socklen_t len = sizeof(peer);
-    int client = (int)accept(h, (sockaddr*)&peer, &len);
-    if (client == -1)
-    {
-      LogosE("accept() failed");
-      exit(1);
-    }
-
-    size_t index = threads.size();
-    bool send = sender == index;
-    threads.push_back(pool.Run(std::bind(server_thread, client, index, send)));
-  }
+  threads.push_back(pool.Run(std::bind(ServerThread, client, std::ref(dataReadyEvent))));
 
   WaitForMultipleObjects(threads, true);
   closesocket(h);
-
-  SetEvent(serverComplete);
-  LogmeI("server_thread signalled clientComplete");
+  
+  printf("Exiting listener\n");
 }
 
-static void client_thread(HEvent& exitEvent, size_t index)
+static void ClientThread(ThreadPool::Pool& pool, HEvent readyEvent, HEvent dataReadyEvent)
 {
-  RenameThread("ct", index, false);
+  SET_CUR_THREAD_NAME("client");
+  printf("Client thread is started\n");
 
   Logme::ID ch = CH;
   ConfigPtr config = std::make_shared<Config>();
@@ -183,6 +157,7 @@ static void client_thread(HEvent& exitEvent, size_t index)
     exit(1);
   }
 
+  HEvent exitEvent = CreateNotificationEvent();
   SocketPair pair(ch, exitEvent, config);
   pair.Server = pair.CreateBIOSocket();
 
@@ -200,50 +175,38 @@ static void client_thread(HEvent& exitEvent, size_t index)
     exit(1);
   }
 
-  int n = pair.Server->WriteStr(std::to_string(index));
-  if (n == -1)
-  {
-    LogmeE("Server->WriteStr() failed");
-    exit(1);
-  }
+  std::vector<char> chunk(ChunkSize);
+  for (size_t i = 0; i < ChunkSize; i++)
+    chunk[i] = (char)(unsigned char)i;
 
-  std::vector<char> buffer(32);
-  n = pair.Server->Read(buffer);
-  if (n > 0)
+  for (size_t cb = 0; cb < DataSize; cb += ChunkSize)
   {
-    if (std::string(Data1) != &buffer[0])
+    int n = pair.Server->Write(chunk);
+    if (n == -1)
     {
-      LogmeE("Unexpected data from server");
+      LogmeE("Server->WriteStr() failed");
       exit(1);
     }
+
+    assert(n == ChunkSize);
   }
 
+  SetEvent(dataReadyEvent);
+
   pair.Close();
+  printf("Exiting client\n");
 }
 
-TEST(EventQueue, Grow)
+TEST(EventQueue, LT_ET)
 {
   HEvent readyEvent = CreateNotificationEvent();
-  HEvent completeEvent = CreateNotificationEvent();
-
-  ThreadPool::Pool pool;
-  std::shared_ptr<std::jthread> listener;
-
-  listener = std::make_shared<std::jthread>(
-    listener_thread
-    , std::ref(pool)
-    , readyEvent
-    , completeEvent
-  );
-
-  WaitForSingleObject(readyEvent);
+  HEvent dataReadyEvent = CreateNotificationEvent();
 
   EventArray threads;
-  while (threads.size() < NumClients)
-    threads.push_back(pool.Run(std::bind(&client_thread, completeEvent, threads.size())));
+  ThreadPool::Pool pool;
+  threads.push_back(pool.Run(std::bind(&ListenerThread, std::ref(pool), std::ref(readyEvent), std::ref(dataReadyEvent))));
+  threads.push_back(pool.Run(std::bind(&ClientThread, std::ref(pool), std::ref(readyEvent), std::ref(dataReadyEvent))));
 
-  listener.reset();
   WaitForMultipleObjects(threads, true);
-
   pool.Stop();
 }

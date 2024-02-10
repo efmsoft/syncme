@@ -33,7 +33,7 @@ if(ENABLE_ALLSTAT)
   endif()
 
   if(ALLSTAT_ROOT STREQUAL "")
-    set(ALLSTAT_ROOT "${CMAKE_CURRENT_LIST_DIR}/out/allstat")
+    set(ALLSTAT_ROOT "${CMAKE_SOURCE_DIR}/out/allstat")
     if(NOT EXISTS ALLSTAT_ROOT)
       include(FetchContent)
       FetchContent_Declare(allstat

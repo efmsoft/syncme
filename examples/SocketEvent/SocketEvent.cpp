@@ -171,7 +171,7 @@ void Client()
 
   printf("client: received %s\n", buf);
 
-  Sleep(3000);
+  Syncme::Sleep(3000);
 
   rc = send(h, "hello2", 6, 0);
   if (rc == -1)

@@ -3,8 +3,10 @@ if(WIN32)
   set(WINLIBS WS2_32.Lib)
 endif()
 
+set(TESTMAIN ${CMAKE_CURRENT_SOURCE_DIR}/../TestMain.cpp)
+
 file(GLOB_RECURSE SOURCES RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "*.c*" "*.h") 
-add_executable(sockets_test ${SOURCES} ${OPENSSL_SOURCES})
+add_executable(sockets_test ${TESTMAIN} ${SOURCES} ${OPENSSL_SOURCES})
 
 target_compile_definitions(sockets_test PUBLIC SYNCME_BUILD)
 
@@ -14,7 +16,13 @@ if(WIN32)
   )
 endif()
 
-target_link_libraries(sockets_test LINK_PUBLIC gtest_main syncme  ${LOGME_LIB} ${ALLSTAT_LIB} ${OPENSSL_LIBRARIES} ${WINLIBS})
+target_link_libraries(sockets_test LINK_PUBLIC 
+  gtest_main syncme  
+  ${LOGME_LIB} 
+  ${ALLSTAT_LIB} 
+  ${OPENSSL_LIBRARIES} 
+  ${WINLIBS}
+)
 
 include(GoogleTest)
 gtest_discover_tests(sockets_test)

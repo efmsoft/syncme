@@ -31,6 +31,7 @@ FetchContent_MakeAvailable(googletest)
 
 if(USE_LOGME)
   add_subdirectory(sockets_test)
+  add_subdirectory(sockets_lt_et)
 endif()
 
 add_subdirectory(sync_test)

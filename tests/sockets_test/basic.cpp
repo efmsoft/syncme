@@ -9,26 +9,11 @@
 
 using namespace Syncme;
 
-bool EnableLogging = true;
-
 static const char* Data1 = "Hello World!";
 static const char* Data2 = "http/1.1 200 OK";
 static const int ServerPort = 1234;
 
 #pragma warning(disable : 28193)
-
-#ifndef _WIN32
-void BlockSignal(int signal_to_block)
-{
-  sigset_t old_state;
-  sigprocmask(SIG_BLOCK, nullptr, &old_state);
-
-  sigset_t set = old_state;
-  sigaddset(&set, signal_to_block);
-
-  pthread_sigmask(SIG_BLOCK, &set, nullptr);
-}
-#endif
 
 static void server_thread(SocketPair& pair, HEvent& readyEvent, HEvent& serverComplete)
 {
@@ -108,13 +93,13 @@ static void server_thread(SocketPair& pair, HEvent& readyEvent, HEvent& serverCo
   EXPECT_EQ(n, (int)strlen(Data2));
   EXPECT_EQ(strcmp(&buffer[0], Data2), 0);
 
-  SetEvent(serverComplete);
   closesocket(h);
 
-  LogmeI("server_thread signalled clientComplete");
+  LogmeI("server_thread signalling serverComplete");
+  SetEvent(serverComplete);
 }
 
-void client_thread(SocketPair& pair, HEvent& clientComplete)
+static void client_thread(SocketPair& pair, HEvent& clientComplete)
 {
   SET_CUR_THREAD_NAME(__FUNCTION__);
 
@@ -162,21 +147,12 @@ void client_thread(SocketPair& pair, HEvent& clientComplete)
   }
   EXPECT_EQ(n, strlen(Data2));
 
+  LogmeI("client_thread signalling clientComplete");
   SetEvent(clientComplete);
-  LogmeI("client_thread signalled clientComplete");
 }
 
 TEST(Sockets, basic)
 {
-#ifdef _WIN32
-  WSADATA wsaData{};
-  WORD wVersionRequested = MAKEWORD(2, 2);
-  int e = WSAStartup(wVersionRequested, &wsaData);
-  EXPECT_EQ(e, 0);
-#else
-  BlockSignal(SIGPIPE);
-#endif
-
   Logme::ID ch = CH;
   HEvent exitEvent = CreateNotificationEvent();
   HEvent readyEvent = CreateNotificationEvent();
@@ -188,19 +164,20 @@ TEST(Sockets, basic)
   pair.Client = pair.CreateBIOSocket();
   pair.Server = pair.CreateBIOSocket();
 
+  // Start server thread
   std::jthread sender(server_thread, std::ref(pair), std::ref(readyEvent), std::ref(serverComplete));
+  
+  // Wait when server will be ready to accept connections
   auto rc = WaitForSingleObject(readyEvent);
   EXPECT_EQ(rc, WAIT_RESULT::OBJECT_0);
 
+  // Start client thread
   std::jthread receiver(client_thread, std::ref(pair), std::ref(clientComplete));
 
+  // Wait for termination of both server and client threads
   EventArray object(serverComplete, clientComplete);
   rc = WaitForMultipleObjects(object, true, FOREVER);
   EXPECT_EQ(rc == WAIT_RESULT::OBJECT_0 || rc == WAIT_RESULT::OBJECT_1, true);
 
   pair.Close();
-
-#ifdef _WIN32
-  WSACleanup();
-#endif
 }
