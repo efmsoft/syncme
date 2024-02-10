@@ -45,17 +45,17 @@ static void ServerThread(int client, HEvent dataReadyEvent)
   WaitForSingleObject(dataReadyEvent, FOREVER);
   printf("Data ready is signalled\n");
 
-  for (size_t cb = 0; cb < DataSize; cb += ChunkSize)
+  for (size_t cb = 0; cb < DataSize;)
   {
     std::vector<char> buffer(ChunkSize);
     int n = pair.Client->Read(buffer);
-    if (n == -1)
+    if (n <= 0)
     {
       LogmeE("Failed to receive client request");
       exit(1);
     }
 
-    assert(n == ChunkSize);
+    cb += n;
   }
   
   printf("All data blocks received\n");

@@ -219,7 +219,7 @@ SocketEventQueue::ADD_EVENT_RESULT SocketEventQueue::Append(SocketEvent* socketE
     if (ev.events == 0)
       return ADD_EVENT_RESULT::SUCCESS;
 
-    ev.events |= EPOLLONESHOT | EPOLLET;
+    ev.events |= EPOLLONESHOT;
     if (epoll_ctl(Poll, EPOLL_CTL_ADD, socketEvent->Socket, &ev) == -1)
     {
       LogosE("epoll_ctl(EPOLL_CTL_ADD) failed");
@@ -326,7 +326,7 @@ bool SocketEventQueue::ActivateEvent(SocketEvent* socketEvent)
   if (ev.events == 0)
     return false;
 
-  ev.events |= EPOLLONESHOT | EPOLLET;
+  ev.events |= EPOLLONESHOT;
   if (epoll_ctl(Poll, EPOLL_CTL_MOD, socketEvent->Socket, &ev) == -1)
   {
     LogosE("epoll_ctl(EPOLL_CTL_MOD) failed");
@@ -352,14 +352,10 @@ void SocketEventQueue::FireEvents(const epoll_event& e)
     if (!Queue.count(p))
       return;
 
-    // Check that event is activated
-    assert(Queue[p] == true);
-
     // Mark event as removed from wait list
     Queue[p] = false;
 
     int events = 0;
-
     if (e.events & EPOLLIN)
       events |= EVENT_READ;
 
@@ -434,6 +430,7 @@ void SocketEventQueue::Worker()
   while (GetEventState(EvStop) != STATE::SIGNALLED)
   {
     int n = epoll_wait(Poll, &Events[0], int(Events.size()), -1);
+
     if (n < 0 && errno == EINTR)
       n = 0;
 
