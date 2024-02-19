@@ -21,6 +21,8 @@ SocketEvent::SocketEvent(int socket, int mask)
   , Events(0)
 #ifdef _WIN32
   , WSAEvent(WSACreateEvent())
+#else
+  , Closed(false)
 #endif
 {
   assert(socket != -1);
@@ -222,6 +224,9 @@ void SocketEvent::FireEvents(int events)
   {
     auto guard = EventLock.Lock();
     Events = events & EventMask;
+
+    if (Events & EVENT_CLOSE)
+      Closed = true;
   }
 
   SetEvent(this);

@@ -26,6 +26,8 @@ namespace Syncme
 
 #ifdef _WIN32
       void* WSAEvent;
+#else
+      bool Closed;
 #endif
 
     public:
