@@ -314,6 +314,14 @@ bool SocketEventQueue::Empty()
 bool SocketEventQueue::ActivateEvent(SocketEvent* socketEvent)
 {
 #ifndef _WIN32
+  auto guard = DataLock.Lock();
+  if (!Queue.count(socketEvent))
+    return false;
+
+  // Do nothing if event is already activated
+  if (Queue[socketEvent])
+    return true;
+
   epoll_event ev = socketEvent->GetPollEvent();
   if (ev.events == 0)
     return false;
@@ -324,6 +332,8 @@ bool SocketEventQueue::ActivateEvent(SocketEvent* socketEvent)
     LogosE("epoll_ctl(EPOLL_CTL_MOD) failed");
     return false;
   }
+
+  Queue[socketEvent] = true;
   return true;
 #else
   return false;
@@ -333,12 +343,17 @@ bool SocketEventQueue::ActivateEvent(SocketEvent* socketEvent)
 #ifndef _WIN32
 void SocketEventQueue::FireEvents(const epoll_event& e)
 {
+  auto guard = DataLock.Lock();
+
   SocketEvent* p = (SocketEvent*)e.data.ptr;
   if (p != nullptr)
   {
     // Ensure that RemoveSocketEvent was not called
     if (!Queue.count(p))
       return;
+
+    // Mark event as removed from wait list
+    Queue[p] = false;
 
     int events = 0;
     if (e.events & EPOLLIN)
@@ -357,30 +372,25 @@ void SocketEventQueue::FireEvents(const epoll_event& e)
 
 bool SocketEventQueue::ProcessEvents(int n)
 {
-  if (true)
+  std::string command;
+  for (int i = 0; i < n; i++)
   {
-    auto guard = DataLock.Lock();
-
-    std::string command;
-    for (int i = 0; i < n; i++)
+    auto& e = Events[i];
+    if (e.data.fd == ControlSocket)
     {
-      auto& e = Events[i];
-      if (e.data.fd == ControlSocket)
+      char buffer[512] = {'\0'};
+      int cb = read(ControlSocket, buffer, sizeof(buffer));
+      if (cb == -1)
       {
-        char buffer[512] = { '\0' };
-        int cb = read(ControlSocket, buffer, sizeof(buffer));
-        if (cb == -1)
-        {
-          LogosE("Failed to read control socket");
-        }
-        else if (cb)
-          command = std::string(buffer, cb);
-
-        continue;
+        LogosE("Failed to read control socket");
       }
+      else if (cb)
+        command = std::string(buffer, cb);
 
-      FireEvents(e);
+      continue;
     }
+
+    FireEvents(e);
   }
 
   if (command == CMD_EXIT)
