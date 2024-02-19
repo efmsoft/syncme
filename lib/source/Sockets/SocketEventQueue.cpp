@@ -357,12 +357,11 @@ void SocketEventQueue::FireEvents(const epoll_event& e)
 
 bool SocketEventQueue::ProcessEvents(int n)
 {
-  std::string command;
-
   if (true)
   {
     auto guard = DataLock.Lock();
 
+    std::string command;
     for (int i = 0; i < n; i++)
     {
       auto& e = Events[i];
