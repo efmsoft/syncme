@@ -24,15 +24,20 @@ Event::Event(bool notification_event, bool signalled)
 Event::~Event()
 {
   auto guard = RemoveLock.Lock();
-  assert(Waits.empty());
 
-  for (;;)
+  if (true)
   {
-    Event* c = PopRef();
-    if (c == nullptr)
-      break;
+    std::lock_guard<std::mutex> guard(Lock);
+    assert(Waits.empty());
 
-    c->RemoveRef(this);
+    for (;;)
+    {
+      Event* c = PopRef();
+      if (c == nullptr)
+        break;
+
+      c->RemoveRef(this);
+    }
   }
    
   EventObjects--;
