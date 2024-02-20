@@ -224,9 +224,10 @@ void SocketEvent::FireEvents(int events)
   {
     auto guard = EventLock.Lock();
     Events = events & EventMask;
-
+#ifndef _WIN32
     if (Events & EVENT_CLOSE)
       Closed = true;
+#endif
   }
 
   SetEvent(this);
