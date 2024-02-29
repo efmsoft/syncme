@@ -33,9 +33,9 @@ HEvent Syncme::DuplicateHandle(HEvent event)
     , event->Signalled
   );
 
-  event->AddRef(e.get());
-  e->AddRef(event.get());
-
+  if (e != nullptr)
+    e->BindTo(event.get());
+  
   return e;
 }
 

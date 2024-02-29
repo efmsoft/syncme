@@ -43,6 +43,14 @@ Event::~Event()
   EventObjects--;
 }
 
+void Event::BindTo(Event* aliase)
+{
+  auto guard = RemoveLock.Lock();
+
+  AddRef(aliase);
+  aliase->AddRef(this);
+}
+
 uint32_t Event::Signature() const
 {
   return SIGNATURE;

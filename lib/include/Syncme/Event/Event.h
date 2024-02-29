@@ -65,6 +65,7 @@ namespace Syncme
     void AddRef(Event* dup);
     void RemoveRef(Event* dup);
     Event* PopRef();
+    void BindTo(Event* aliase);
 
   private:
     Event(const Event&) = delete;
