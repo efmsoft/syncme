@@ -23,6 +23,7 @@ Socket::Socket(SocketPair* pair, int handle, bool enableClose)
   , Configured(false)
   , CloseNotify(true)
   , BlockingMode(true)
+  , Pid(-1)
 {
 }
 

@@ -53,6 +53,8 @@ namespace Syncme
     typedef std::list<PacketPtr> PacketQueue;
     PacketQueue Packets;
 
+    int Pid;
+
   public:
     Socket(SocketPair* pair, int handle = -1, bool enableClose = true);
     virtual ~Socket();
