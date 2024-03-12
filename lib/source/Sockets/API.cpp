@@ -8,7 +8,11 @@ using namespace Syncme::Implementation;
 
 HEvent Syncme::CreateSocketEvent(int socket, int eventMask)
 {
-  HEvent event = std::make_shared<SocketEvent>(socket, eventMask);
+  HEvent event = std::shared_ptr<Event>(
+    new SocketEvent(socket, eventMask)
+    , Syncme::EventDeleter()
+  );
+
   if (event)
   {
 #ifndef _WIN32    

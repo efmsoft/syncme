@@ -8,12 +8,18 @@ using namespace Syncme::Implementation;
 
 HEvent Syncme::CreateManualResetTimer()
 {
-  return std::make_shared<WaitableTimer>(true);
+  return std::shared_ptr<Event>(
+    new WaitableTimer(true)
+    , Syncme::EventDeleter()
+  );
 }
 
 HEvent Syncme::CreateAutoResetTimer()
 {
-  return std::make_shared<WaitableTimer>(false);
+  return std::shared_ptr<Event>(
+    new WaitableTimer(false)
+    , Syncme::EventDeleter()
+  );
 }
 
 bool Syncme::SetWaitableTimer(

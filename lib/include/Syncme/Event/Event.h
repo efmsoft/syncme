@@ -51,6 +51,7 @@ namespace Syncme
     virtual bool Wait(uint32_t ms);
 
   protected:
+    friend struct EventDeleter;
     friend class WaitContext;
     friend WAIT_RESULT Syncme::WaitForSingleObject(HEvent event, uint32_t ms);
     friend WAIT_RESULT Syncme::WaitForMultipleObjects(const EventArray&, bool, uint32_t);
@@ -71,5 +72,10 @@ namespace Syncme
     Event(const Event&) = delete;
     Event(Event&& src) noexcept = delete;
     Event& operator=(const Event&) = delete;
+  };
+
+  struct EventDeleter
+  {
+    void operator()(Event* p) const;
   };
 }

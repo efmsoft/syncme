@@ -7,12 +7,18 @@ using namespace Syncme;
 
 HEvent Syncme::CreateNotificationEvent(STATE state)
 {
-  return std::make_shared<Syncme::Event>(true, state != STATE::NOT_SIGNALLED);
+  return std::shared_ptr<Syncme::Event>(
+    new Syncme::Event(true, state != STATE::NOT_SIGNALLED)
+    , Syncme::EventDeleter()
+  );
 }
 
 HEvent Syncme::CreateSynchronizationEvent(STATE state)
 {
-  return std::make_shared<Syncme::Event>(false, state != STATE::NOT_SIGNALLED);
+  return std::shared_ptr<Syncme::Event>(
+    new Syncme::Event(false, state != STATE::NOT_SIGNALLED)
+    , Syncme::EventDeleter()
+  );
 }
 
 bool Syncme::CloseHandle(HEvent& event)
@@ -28,9 +34,9 @@ bool Syncme::CloseHandle(HEvent& event)
 
 HEvent Syncme::DuplicateHandle(HEvent event)
 {
-  HEvent e = std::make_shared<Syncme::Event>(
-    event->Notification
-    , event->Signalled
+  HEvent e = std::shared_ptr<Syncme::Event>(
+    new Syncme::Event(event->Notification, event->Signalled)
+    , Syncme::EventDeleter()
   );
 
   if (e != nullptr)

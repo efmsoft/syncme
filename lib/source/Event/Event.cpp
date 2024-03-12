@@ -23,8 +23,6 @@ Event::Event(bool notification_event, bool signalled)
 
 Event::~Event()
 {
-  auto guard = RemoveLock.Lock();
-
   if (true)
   {
     std::lock_guard<std::mutex> guard(Lock);
@@ -41,6 +39,12 @@ Event::~Event()
   }
    
   EventObjects--;
+}
+
+void EventDeleter::operator()(Event* p) const
+{
+  auto guard = Event::RemoveLock.Lock();
+  delete p;
 }
 
 void Event::BindTo(Event* aliase)
