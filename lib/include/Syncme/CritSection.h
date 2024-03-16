@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <string>
 
+#include <Syncme/Api.h>
 #include <Syncme/Sync.h>
 
 namespace Syncme
@@ -24,8 +25,8 @@ namespace Syncme
 #endif
 
   public:
-    CS();
-    ~CS();
+    SINCMELNK CS();
+    SINCMELNK ~CS();
 
     class AutoLock
     {
@@ -33,8 +34,8 @@ namespace Syncme
       CS* Section;
 
     public:
-      AutoLock(AutoLock&& src) noexcept;
-      ~AutoLock();
+      SINCMELNK AutoLock(AutoLock&& src) noexcept;
+      SINCMELNK ~AutoLock();
 
     private:
       AutoLock() = delete;
@@ -44,10 +45,10 @@ namespace Syncme
       AutoLock& operator=(const AutoLock&) = delete;
     };
 
-    const AutoLock Lock();
+    SINCMELNK const AutoLock Lock();
 
-    void Acquire();
-    void Release();
+    SINCMELNK void Acquire();
+    SINCMELNK void Release();
 
   private:
     CS(const CS&) = delete;

@@ -14,6 +14,7 @@ static TimerQueuePtr Instance;
 std::recursive_mutex TimerQueue::Lock;
 
 std::atomic<uint64_t> Syncme::QueuedTimers{};
+uint64_t Syncme::GetQueuedTimers() {return Syncme::QueuedTimers;}
 
 TimerQueue::TimerQueue()
   : EvStop(CreateNotificationEvent())

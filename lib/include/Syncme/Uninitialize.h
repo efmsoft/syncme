@@ -1,8 +1,10 @@
 #pragma once
 
+#include <Syncme/Api.h>
+
 namespace Syncme
 {
-  void Uninitialize();
+  SINCMELNK void Uninitialize();
 
   namespace Implementation
   {
@@ -14,7 +16,7 @@ namespace Syncme
       PUNINIT Callback;
     };
 
-    void CallOnUninitialize(UninitializeEntry* entry);
+    SINCMELNK void CallOnUninitialize(UninitializeEntry* entry);
 
     #define ON_SYNCME_UNINITIALIZE(callback) \
       struct UnintHelper : public UninitializeEntry \

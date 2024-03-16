@@ -4,6 +4,7 @@
 
 #include <openssl/ssl.h>
 
+#include <Syncme/Api.h>
 #include <Syncme/Config/Config.h>
 #include <Syncme/Logger/Channel.h>
 #include <Syncme/Sockets/Socket.h>
@@ -31,22 +32,22 @@ namespace Syncme
     uint64_t PeerDisconnect;
 
   public:
-    SocketPair(CHANNEL& ch, HEvent exitEvent, ConfigPtr config);
-    ~SocketPair();
+    SINCMELNK SocketPair(CHANNEL& ch, HEvent exitEvent, ConfigPtr config);
+    SINCMELNK ~SocketPair();
 
-    void Close();
-    bool Closing() const;
-    int PeerDisconnected();
+    SINCMELNK void Close();
+    SINCMELNK bool Closing() const;
+    SINCMELNK int PeerDisconnected();
 
-    HEvent GetExitEvent() const;
-    HEvent GetCloseEvent() const;
+    SINCMELNK HEvent GetExitEvent() const;
+    SINCMELNK HEvent GetCloseEvent() const;
 
-    CHANNEL& GetChannel();
-    ConfigPtr GetConfig();
+    SINCMELNK CHANNEL& GetChannel();
+    SINCMELNK ConfigPtr GetConfig();
 
-    SocketPtr CreateBIOSocket();
-    SocketPtr CreateSSLSocket(SSL* ssl);
+    SINCMELNK SocketPtr CreateBIOSocket();
+    SINCMELNK SocketPtr CreateSSLSocket(SSL* ssl);
 
-    const char* WhoAmI(Socket* socket) const;
+    SINCMELNK const char* WhoAmI(Socket* socket) const;
   };
 }

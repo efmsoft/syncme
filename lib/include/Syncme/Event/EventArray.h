@@ -3,6 +3,8 @@
 #include <memory>
 #include <vector>
 
+#include <Syncme/Api.h>
+
 namespace Syncme
 {
   class Event;
@@ -10,7 +12,7 @@ namespace Syncme
   
   struct EventArray : public std::vector<HEvent>
   {
-    EventArray(
+    SINCMELNK EventArray(
       HEvent e1 = HEvent()
       , HEvent e2 = HEvent()
       , HEvent e3 = HEvent()

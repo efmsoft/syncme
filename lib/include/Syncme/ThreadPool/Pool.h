@@ -4,6 +4,7 @@
 #include <mutex>
 #include <stdint.h>
 
+#include <Syncme/Api.h>
 #include <Syncme/TimePoint.h>
 #include <Syncme/ThreadPool/Worker.h>
 
@@ -38,27 +39,27 @@ namespace Syncme
       WorkerList Unused;
 
     public:
-      Pool();
-      ~Pool();
+      SINCMELNK Pool();
+      SINCMELNK ~Pool();
 
-      void Prealloc();
-      void Stop();
+      SINCMELNK void Prealloc();
+      SINCMELNK void Stop();
 
-      HEvent Run(TCallback cb, uint64_t* pid = nullptr);
+      SINCMELNK HEvent Run(TCallback cb, uint64_t* pid = nullptr);
 
-      void StopUnused();
+      SINCMELNK void StopUnused();
 
-      size_t GetMaxThread() const;
-      void SetMaxThreads(size_t size);
+      SINCMELNK size_t GetMaxThread() const;
+      SINCMELNK void SetMaxThreads(size_t size);
 
-      size_t GetMaxUnusedThreads() const;
-      void SetMaxUnusedThreads(size_t size);
+      SINCMELNK size_t GetMaxUnusedThreads() const;
+      SINCMELNK void SetMaxUnusedThreads(size_t size);
 
-      long GetMaxIdleTime() const;
-      void SetMaxIdleTime(long t);
+      SINCMELNK long GetMaxIdleTime() const;
+      SINCMELNK void SetMaxIdleTime(long t);
 
-      OVERFLOW_MODE GetOverflowMode() const;
-      void SetOverflowMode(OVERFLOW_MODE mode);
+      SINCMELNK OVERFLOW_MODE GetOverflowMode() const;
+      SINCMELNK void SetOverflowMode(OVERFLOW_MODE mode);
 
     private:
       void CB_OnFree(Worker* p);

@@ -8,6 +8,7 @@ using namespace Syncme::Implementation;
 #define SIGNATURE *(uint32_t*)"WTmr";
 
 std::atomic<uint64_t> Syncme::TimerObjects{};
+uint64_t Syncme::GetTimerObjects()  {return Syncme::TimerObjects;}
 
 WaitableTimer::WaitableTimer(bool notification_event)
   : Event(notification_event, false)

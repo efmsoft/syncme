@@ -2,6 +2,7 @@
 
 #include <vector>
 
+#include <Syncme/Api.h>
 #include <Syncme/Sync.h>
 
 class ThreadsList
@@ -9,11 +10,11 @@ class ThreadsList
   std::vector<HEvent> List;
 
 public:
-  ThreadsList();
-  ~ThreadsList();
+  SINCMELNK ThreadsList();
+  SINCMELNK ~ThreadsList();
 
-  void Add(HEvent h);
-  size_t Update();
+  SINCMELNK void Add(HEvent h);
+  SINCMELNK size_t Update();
 
 private:
   void Wait();

@@ -25,16 +25,16 @@ namespace Syncme
       TimerList Queue;
 
     public:
-      TimerQueue();
-      ~TimerQueue();
+      SINCMELNK TimerQueue();
+      SINCMELNK ~TimerQueue();
 
-      bool SetTimer(
+      SINCMELNK bool SetTimer(
         HEvent timer
         , long dueTime
         , long period
         , std::function<void(HEvent)> callback
       );
-      bool CancelTimer(Syncme::Event* timer);
+      SINCMELNK bool CancelTimer(Syncme::Event* timer);
       bool Empty() const;
 
     protected:

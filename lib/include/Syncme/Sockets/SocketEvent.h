@@ -7,6 +7,7 @@
 #include <sys/epoll.h>
 #endif
 
+#include <Syncme/Api.h>
 #include <Syncme/Event/Event.h>
 #include <Syncme/Sync.h>
 
@@ -31,21 +32,21 @@ namespace Syncme
 #endif
 
     public:
-      SocketEvent(int socket, int mask);
-      ~SocketEvent();
+      SINCMELNK SocketEvent(int socket, int mask);
+      SINCMELNK ~SocketEvent();
 
-      int GetEvents();
-      void FireEvents(int events);
+      SINCMELNK int GetEvents();
+      SINCMELNK void FireEvents(int events);
 
-      void OnCloseHandle() override;
-      bool Wait(uint32_t ms) override;
-      uint32_t RegisterWait(TWaitComplete complete) override;
-      bool UnregisterWait(uint32_t cookie) override;
-      uint32_t Signature() const override;
-      static bool IsSocketEvent(HEvent h);
+      SINCMELNK void OnCloseHandle() override;
+      SINCMELNK bool Wait(uint32_t ms) override;
+      SINCMELNK uint32_t RegisterWait(TWaitComplete complete) override;
+      SINCMELNK bool UnregisterWait(uint32_t cookie) override;
+      SINCMELNK uint32_t Signature() const override;
+      SINCMELNK static bool IsSocketEvent(HEvent h);
 
 #ifndef _WIN32
-      epoll_event GetPollEvent() const;
+      SINCMELNK epoll_event GetPollEvent() const;
 #endif
       
     private:

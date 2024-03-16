@@ -10,6 +10,7 @@
 #include <stdint.h>
 #include <vector>
 
+#include <Syncme/Api.h>
 #include <Syncme/CritSection.h>
 #include <Syncme/Sync.h>
 
@@ -36,11 +37,11 @@ namespace Syncme
     std::list<Event*> CrossRef;
 
   public:
-    Event(bool notification_event = true, bool signalled = false);
-    virtual ~Event();
+    SINCMELNK Event(bool notification_event = true, bool signalled = false);
+    SINCMELNK virtual ~Event();
 
-    virtual uint32_t Signature() const;
-    virtual void OnCloseHandle();
+    SINCMELNK virtual uint32_t Signature() const;
+    SINCMELNK virtual void OnCloseHandle();
 
   protected:
 

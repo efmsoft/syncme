@@ -2,6 +2,7 @@
 
 #include <mutex>
 
+#include <Syncme/Api.h>
 #include <Syncme/Sockets/Socket.h>
 #include <openssl/bio.h>
 
@@ -13,17 +14,17 @@ namespace Syncme
     BIO* Bio;
 
   public:
-    BIOSocket(SocketPair* pair);
-    ~BIOSocket();
+    SINCMELNK BIOSocket(SocketPair* pair);
+    SINCMELNK ~BIOSocket();
 
-    int Read(void* buffer, size_t size, int timeout) override;
-    void Shutdown() override;
+    SINCMELNK int Read(void* buffer, size_t size, int timeout) override;
+    SINCMELNK void Shutdown() override;
 
-    virtual SKT_ERROR Ossl2SktError(int ret) const override;
-    int GetFD() const override;
-    void LogIoError(const char* fn, const char* text) override;
+    SINCMELNK virtual SKT_ERROR Ossl2SktError(int ret) const override;
+    SINCMELNK int GetFD() const override;
+    SINCMELNK void LogIoError(const char* fn, const char* text) override;
 
-    bool Attach(int socket, bool enableClose = true) override;
+    SINCMELNK bool Attach(int socket, bool enableClose = true) override;
 
   private:
     int InternalWrite(const void* buffer, size_t size, int timeout) override;

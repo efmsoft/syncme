@@ -10,6 +10,7 @@ using namespace Syncme;
 #define SIGNATURE *(uint32_t*)"Evnt";
 
 std::atomic<uint64_t> Syncme::EventObjects{};
+uint64_t Syncme::GetEventObjects() {return Syncme::EventObjects;}
 std::atomic<uint32_t> Event::NextCookie{ 1 };
 CS Event::RemoveLock;
 

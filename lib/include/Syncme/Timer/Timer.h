@@ -20,10 +20,10 @@ namespace Syncme
       uint64_t NextDueTime;
 
     public:
-      Timer(HEvent timer, long period, std::function<void(HEvent)> callback);
-      ~Timer();
+      SINCMELNK Timer(HEvent timer, long period, std::function<void(HEvent)> callback);
+      SINCMELNK ~Timer();
 
-      void Set(long dueTime);
+      SINCMELNK void Set(long dueTime);
     };
 
     typedef std::shared_ptr<Timer> TimerPtr;

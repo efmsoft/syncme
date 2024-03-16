@@ -4,6 +4,8 @@
 #include <memory>
 #include <stdint.h>
 
+#include <Syncme/Api.h>
+
 namespace Syncme
 {
   class ErrorLimit
@@ -13,12 +15,12 @@ namespace Syncme
     std::list<uint64_t> History;
 
   public:
-    ErrorLimit(size_t count, uint64_t duration);
+    SINCMELNK ErrorLimit(size_t count, uint64_t duration);
 
-    void SetLimit(size_t count, uint64_t duration);
-    void Clear();
+    SINCMELNK void SetLimit(size_t count, uint64_t duration);
+    SINCMELNK void Clear();
 
-    bool ReportError();
+    SINCMELNK bool ReportError();
   };
 
   typedef std::shared_ptr<ErrorLimit> ErrorLimitPtr;

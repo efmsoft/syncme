@@ -15,6 +15,11 @@
 get_filename_component(SYNCME_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE) 
 
 set(SYNCME_INCLUDE_DIR ${SYNCME_ROOT}/lib/include)
-set(SYNCME_LIBRARIES syncme)
 
-add_subdirectory(${SYNCME_ROOT}/lib)
+if(${USE_SYNCME_SHARED})
+  add_subdirectory(${SYNCME_ROOT}/dynamic)
+  set(SYNCME_LIBRARIES syncmed)
+else()
+  add_subdirectory(${SYNCME_ROOT}/lib)
+  set(SYNCME_LIBRARIES syncme)
+endif()

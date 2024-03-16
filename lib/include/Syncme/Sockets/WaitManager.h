@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Syncme/Api.h>
 namespace Syncme
 {
   namespace Implementation
@@ -8,9 +9,9 @@ namespace Syncme
 
     namespace WaitManager
     {
-      void AddSocketEvent(SocketEvent* e);
-      void RemoveSocketEvent(SocketEvent* e);
-      void Uninitialize();
+      SINCMELNK void AddSocketEvent(SocketEvent* e);
+      SINCMELNK void RemoveSocketEvent(SocketEvent* e);
+      SINCMELNK void Uninitialize();
     };
   }
 }
