@@ -1,6 +1,8 @@
 #pragma once
 
+#include <Syncme/Api.h>
+
 namespace Syncme
 {
-  void Sleep(unsigned millisec);
+  SINCMELNK void Sleep(unsigned millisec);
 }

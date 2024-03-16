@@ -2,7 +2,9 @@
 
 #include <stdint.h>
 
+#include <Syncme/Api.h>
+
 namespace Syncme
 {
-  uint64_t GetTimeInMillisec();
+  SINCMELNK uint64_t GetTimeInMillisec();
 }

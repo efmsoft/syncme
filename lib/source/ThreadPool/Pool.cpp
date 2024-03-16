@@ -3,6 +3,7 @@
 #include <Syncme/Logger/Log.h>
 #include <Syncme/ProcessThreadId.h>
 #include <Syncme/Sleep.h>
+#include <Syncme/ThreadPool/Counter.h>
 #include <Syncme/ThreadPool/Pool.h>
 
 #define LOCK_GUARD() \
@@ -27,6 +28,13 @@ namespace Syncme::ThreadPool
   std::atomic<uint64_t> OnTimerCalls;
   std::atomic<uint64_t> Errors;
 }
+
+uint64_t Syncme::ThreadPool::GetThreadsTotal() {return ThreadsTotal;}
+uint64_t Syncme::ThreadPool::GetThreadsUnused() {return ThreadsUnused;}
+uint64_t Syncme::ThreadPool::GetThreadsStopped() {return ThreadsStopped;}
+uint64_t Syncme::ThreadPool::GetLockedInRun() {return LockedInRun;}
+uint64_t Syncme::ThreadPool::GetOnTimerCalls() {return OnTimerCalls;}
+uint64_t Syncme::ThreadPool::GetErrors() {return Errors;}
 
 Pool::Pool()
   : MaxUnusedThreads(MAX_UNUSED_THREADS)

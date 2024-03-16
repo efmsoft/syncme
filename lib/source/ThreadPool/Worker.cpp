@@ -4,6 +4,7 @@
 #include <Syncme/ProcessThreadId.h>
 #include <Syncme/SetThreadName.h>
 #include <Syncme/Sync.h>
+#include <Syncme/ThreadPool/Counter.h>
 #include <Syncme/ThreadPool/Worker.h>
 
 #pragma warning(disable : 4996)
@@ -14,6 +15,7 @@ namespace Syncme::ThreadPool
 {
   std::atomic<uint64_t> WorkersDescructed;
 }
+uint64_t Syncme::ThreadPool::GetWorkersDescructed() {return WorkersDescructed;}
 
 Worker::Worker(
   HEvent managementTimer

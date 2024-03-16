@@ -2,9 +2,11 @@
 
 #include <stdint.h>
 
+#include <Syncme/Api.h>
+
 namespace Syncme
 {
-  uint64_t GetCurrentProcessId();
-  uint64_t GetCurrentThreadId();
+  SINCMELNK uint64_t GetCurrentProcessId();
+  SINCMELNK uint64_t GetCurrentThreadId();
 }
  

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Syncme/Api.h>
 #include <Syncme/Sockets/Socket.h>
 #include <openssl/ssl.h>
 
@@ -11,15 +12,15 @@ namespace Syncme
     SSL* Ssl;
 
   public:
-    SSLSocket(SocketPair* pair, SSL* ssl);
-    ~SSLSocket();
+    SINCMELNK SSLSocket(SocketPair* pair, SSL* ssl);
+    SINCMELNK ~SSLSocket();
 
-    int Read(void* buffer, size_t size, int timeout) override;
-    void Shutdown() override;
+    SINCMELNK int Read(void* buffer, size_t size, int timeout) override;
+    SINCMELNK void Shutdown() override;
 
-    SKT_ERROR Ossl2SktError(int ret) const override;
-    int GetFD() const override;
-    void LogIoError(const char* fn, const char* text) override;
+    SINCMELNK SKT_ERROR Ossl2SktError(int ret) const override;
+    SINCMELNK int GetFD() const override;
+    SINCMELNK void LogIoError(const char* fn, const char* text) override;
 
   private:
     int InternalWrite(const void* buffer, size_t size, int timeout) override;

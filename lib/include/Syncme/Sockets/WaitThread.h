@@ -3,6 +3,7 @@
 #include <list>
 #include <memory>
 
+#include <Syncme/Api.h>
 #include <Syncme/CritSection.h>
 #include <Syncme/Sync.h>
 
@@ -24,17 +25,17 @@ namespace Syncme
       void* EvDone;
 
     public:
-      WaitThread();
-      ~WaitThread();
+      SINCMELNK WaitThread();
+      SINCMELNK ~WaitThread();
 
-      bool Add(SocketEvent* e);
-      bool Remove(SocketEvent* e);
+      SINCMELNK bool Add(SocketEvent* e);
+      SINCMELNK bool Remove(SocketEvent* e);
 
-      bool Run();
-      void Stop();
-      bool Empty();
+      SINCMELNK bool Run();
+      SINCMELNK void Stop();
+      SINCMELNK bool Empty();
 
-      void Worker();
+      SINCMELNK void Worker();
 
     private:
       void CreateWaitList(std::vector<void*>& object);

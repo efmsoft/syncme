@@ -2,6 +2,8 @@
 
 #include <string>
 
+#include <Syncme/Api.h>
+
 namespace Syncme
 {
   enum class SKT_ERROR
@@ -23,14 +25,14 @@ namespace Syncme
     int Line;
 
   public:
-    SocketError();
-    SocketError(SKT_ERROR code, const char* file, int line);
+    SINCMELNK SocketError();
+    SINCMELNK SocketError(SKT_ERROR code, const char* file, int line);
 
-    void Set(SKT_ERROR code, const char* file, int line);
-    operator SKT_ERROR () const;
+    SINCMELNK void Set(SKT_ERROR code, const char* file, int line);
+    SINCMELNK operator SKT_ERROR () const;
 
-    static std::string ToString(SKT_ERROR c);
-    std::string Format() const;
+    SINCMELNK static std::string ToString(SKT_ERROR c);
+    SINCMELNK std::string Format() const;
   };
 
   #define SET_SOCKET_ERROR(e, c) \

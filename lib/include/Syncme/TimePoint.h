@@ -3,31 +3,33 @@
 #include <chrono>
 #include <stdint.h>
 
+#include <Syncme/Api.h>
+
 namespace Syncme
 {
   typedef std::chrono::high_resolution_clock Clock;
   typedef std::chrono::time_point<Clock> TimeValue;
 
   class TimePoint;
-  int64_t operator-(const TimePoint& t1, const TimePoint& t2);
+  SINCMELNK int64_t operator-(const TimePoint& t1, const TimePoint& t2);
 
   class TimePoint
   {
     TimeValue Value;
 
   public:
-    TimePoint(const TimeValue& v = Clock::now())
+    SINCMELNK TimePoint(const TimeValue& v = Clock::now())
       : Value(v)
     {
     }
 
-    int64_t ElapsedSince() const
+    SINCMELNK int64_t ElapsedSince() const
     {
       TimePoint t2;
       return t2 - *this;
     }
 
-    const TimeValue& Get() const
+    SINCMELNK const TimeValue& Get() const
     {
       return Value;
     }

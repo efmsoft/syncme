@@ -8,12 +8,12 @@ namespace Syncme
   {
     struct WaitableTimer : public Event
     {
-      WaitableTimer(bool notification_event = true);
-      ~WaitableTimer();
+      SINCMELNK WaitableTimer(bool notification_event = true);
+      SINCMELNK ~WaitableTimer();
 
-      void OnCloseHandle() override;
-      uint32_t Signature() const override;
-      static bool IsTimer(HEvent h);
+      SINCMELNK void OnCloseHandle() override;
+      SINCMELNK uint32_t Signature() const override;
+      SINCMELNK static bool IsTimer(HEvent h);
     };
   }
 }

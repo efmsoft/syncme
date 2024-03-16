@@ -13,6 +13,7 @@ using namespace Syncme::Implementation;
 #define SIGNATURE *(uint32_t*)"SktE";
 
 std::atomic<uint64_t> Syncme::SocketEventObjects{};
+uint64_t Syncme::GetSocketEventObjects() {return Syncme::SocketEventObjects;}
 
 SocketEvent::SocketEvent(int socket, int mask)
   : Event(false)

@@ -2,6 +2,7 @@
 
 #include <functional>
 
+#include <Syncme/Api.h>
 #include <Syncme/Event/EventArray.h>
 #include <Syncme/Event/Wait.h>
 
@@ -14,25 +15,25 @@ namespace Syncme
 
     UNDEFINED
   };
-  HEvent CreateNotificationEvent(STATE state = STATE::NOT_SIGNALLED);
-  HEvent CreateSynchronizationEvent(STATE state = STATE::NOT_SIGNALLED);
-  HEvent DuplicateHandle(HEvent event);
+  SINCMELNK HEvent CreateNotificationEvent(STATE state = STATE::NOT_SIGNALLED);
+  SINCMELNK HEvent CreateSynchronizationEvent(STATE state = STATE::NOT_SIGNALLED);
+  SINCMELNK HEvent DuplicateHandle(HEvent event);
   
-  bool SetEvent(HEvent event);
-  bool ResetEvent(HEvent event);
-  bool CloseHandle(HEvent& event);
-  STATE GetEventState(HEvent event);
+  SINCMELNK bool SetEvent(HEvent event);
+  SINCMELNK bool ResetEvent(HEvent event);
+  SINCMELNK bool CloseHandle(HEvent& event);
+  SINCMELNK STATE GetEventState(HEvent event);
 
-  HEvent CreateManualResetTimer();
-  HEvent CreateAutoResetTimer();
-  bool SetWaitableTimer(HEvent timer, long dueTime, long period, std::function<void(HEvent)> callback);
-  bool CancelWaitableTimer(HEvent timer);
+  SINCMELNK HEvent CreateManualResetTimer();
+  SINCMELNK HEvent CreateAutoResetTimer();
+  SINCMELNK bool SetWaitableTimer(HEvent timer, long dueTime, long period, std::function<void(HEvent)> callback);
+  SINCMELNK bool CancelWaitableTimer(HEvent timer);
 
   constexpr static int EVENT_READ = 1;
   constexpr static int EVENT_WRITE = 2;
   constexpr static int EVENT_CLOSE = 4;
-  HEvent CreateSocketEvent(int socket, int eventMask);
-  int GetSocketEvents(HEvent socketEvent);
+  SINCMELNK HEvent CreateSocketEvent(int socket, int eventMask);
+  SINCMELNK int GetSocketEvents(HEvent socketEvent);
 }
 
 using HEvent = Syncme::HEvent;

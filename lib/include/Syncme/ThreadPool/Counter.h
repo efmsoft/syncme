@@ -3,6 +3,8 @@
 #include <atomic>
 #include <stdint.h>
 
+#include <Syncme/Api.h>
+
 namespace Syncme
 {
   namespace ThreadPool
@@ -14,5 +16,13 @@ namespace Syncme
     extern std::atomic<uint64_t> LockedInRun;
     extern std::atomic<uint64_t> OnTimerCalls;
     extern std::atomic<uint64_t> Errors;
+
+    SINCMELNK uint64_t GetThreadsTotal();
+    SINCMELNK uint64_t GetThreadsUnused();
+    SINCMELNK uint64_t GetThreadsStopped();
+    SINCMELNK uint64_t GetWorkersDescructed();
+    SINCMELNK uint64_t GetLockedInRun();
+    SINCMELNK uint64_t GetOnTimerCalls();
+    SINCMELNK uint64_t GetErrors();
   }
 }

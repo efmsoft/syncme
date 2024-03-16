@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <thread>
 
+#include <Syncme/Api.h>
 #include <Syncme/CritSection.h>
 #include <Syncme/Sync.h>
 
@@ -43,22 +44,22 @@ namespace Syncme
       CS StateLock;
 
     public:
-      Worker(
+      SINCMELNK Worker(
         HEvent managementTimer
         , TOnIdle notifyIdle
         , TOnTimer onTimer
       );
-      ~Worker();
+      SINCMELNK ~Worker();
 
-      bool Start();
-      void Stop();
+      SINCMELNK bool Start();
+      SINCMELNK void Stop();
 
-      HEvent Invoke(TCallback cb, uint64_t& id);
-      WorkerPtr Get();
+      SINCMELNK HEvent Invoke(TCallback cb, uint64_t& id);
+      SINCMELNK WorkerPtr Get();
 
-      void SetExpireTimer(long ms);
-      void CancelExpireTimer();
-      bool IsExpired() const;
+      SINCMELNK void SetExpireTimer(long ms);
+      SINCMELNK void CancelExpireTimer();
+      SINCMELNK bool IsExpired() const;
 
     private:
       void EntryPoint();

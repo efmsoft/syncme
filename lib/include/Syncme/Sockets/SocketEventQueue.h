@@ -9,6 +9,7 @@
 #include <netinet/in.h>
 #endif
 
+#include <Syncme/Api.h>
 #include <Syncme/Sync.h>
 #include <Syncme/Sockets/SocketEvent.h>
 #include <Syncme/Sockets/WaitManager.h>
@@ -39,14 +40,14 @@ namespace Syncme
 #endif      
 
     public:
-      SocketEventQueue(int& rc, unsigned minPort = 10000, unsigned maxPort = UINT16_MAX);
-      ~SocketEventQueue();
+      SINCMELNK SocketEventQueue(int& rc, unsigned minPort = 10000, unsigned maxPort = UINT16_MAX);
+      SINCMELNK ~SocketEventQueue();
 
-      bool AddSocketEvent(SocketEvent* socketEvent);
-      bool RemoveSocketEvent(SocketEvent* socketEvent);
-      bool Empty();
+      SINCMELNK bool AddSocketEvent(SocketEvent* socketEvent);
+      SINCMELNK bool RemoveSocketEvent(SocketEvent* socketEvent);
+      SINCMELNK bool Empty();
 
-      bool ActivateEvent(SocketEvent* socketEvent);
+      SINCMELNK bool ActivateEvent(SocketEvent* socketEvent);
 
     protected:
       friend struct SocketEvent;

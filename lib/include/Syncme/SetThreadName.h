@@ -2,10 +2,12 @@
 
 #include <stdint.h>
 
+#include <Syncme/Api.h>
+
 namespace Syncme
 {
-  void SetThreadName(uint64_t threadID, const char* threadName);
-  void SetThreadName(uint64_t threadID, const wchar_t* threadName);
+  SINCMELNK void SetThreadName(uint64_t threadID, const char* threadName);
+  SINCMELNK void SetThreadName(uint64_t threadID, const wchar_t* threadName);
 }
 
 #ifdef _DEBUG

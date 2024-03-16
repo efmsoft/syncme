@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include <Syncme/Api.h>
 #include <Syncme/CritSection.h>
 #include <Syncme/Logger/Channel.h>
 #include <Syncme/Sockets/ErrorLimit.h>
@@ -24,7 +25,7 @@ namespace Syncme
     bool Disconnected;
     uint64_t When;
 
-    ConnectedPeer() : Port(0), Disconnected(false), When(0)
+    SINCMELNK ConnectedPeer() : Port(0), Disconnected(false), When(0)
     {
     }
   };
@@ -56,40 +57,40 @@ namespace Syncme
     int Pid;
 
   public:
-    Socket(SocketPair* pair, int handle = -1, bool enableClose = true);
-    virtual ~Socket();
+    SINCMELNK Socket(SocketPair* pair, int handle = -1, bool enableClose = true);
+    SINCMELNK virtual ~Socket();
 
-    virtual int Detach(bool* enableClose = nullptr);
-    virtual bool Attach(int socket, bool enableClose = true);
-    virtual void Close();
-    virtual bool Configure();
-    virtual bool StopPendingRead();
-    virtual void Shutdown() = 0;
-    virtual void Unread(const char* p, size_t n);
+    SINCMELNK virtual int Detach(bool* enableClose = nullptr);
+    SINCMELNK virtual bool Attach(int socket, bool enableClose = true);
+    SINCMELNK virtual void Close();
+    SINCMELNK virtual bool Configure();
+    SINCMELNK virtual bool StopPendingRead();
+    SINCMELNK virtual void Shutdown() = 0;
+    SINCMELNK virtual void Unread(const char* p, size_t n);
     
-    bool IsAttached() const;
-    bool PeerDisconnected() const;
-    bool ReadPeerDisconnected();
+    SINCMELNK bool IsAttached() const;
+    SINCMELNK bool PeerDisconnected() const;
+    SINCMELNK bool ReadPeerDisconnected();
 
-    int Read(std::vector<char>& buffer, int timeout = FOREVER);
-    virtual int Read(void* buffer, size_t size, int timeout = FOREVER) = 0;
+    SINCMELNK int Read(std::vector<char>& buffer, int timeout = FOREVER);
+    SINCMELNK virtual int Read(void* buffer, size_t size, int timeout = FOREVER) = 0;
 
-    int WriteStr(const std::string& str, int timeout = FOREVER);
-    int Write(const std::vector<char>& arr, int timeout = FOREVER);
-    int Write(const void* buffer, size_t size, int timeout = FOREVER);
+    SINCMELNK int WriteStr(const std::string& str, int timeout = FOREVER);
+    SINCMELNK int Write(const std::vector<char>& arr, int timeout = FOREVER);
+    SINCMELNK int Write(const void* buffer, size_t size, int timeout = FOREVER);
 
-    virtual int GetFD() const = 0;
-    virtual SKT_ERROR Ossl2SktError(int ret) const = 0;
-    virtual void LogIoError(const char* fn, const char* text) = 0;
+    SINCMELNK virtual int GetFD() const = 0;
+    SINCMELNK virtual SKT_ERROR Ossl2SktError(int ret) const = 0;
+    SINCMELNK virtual void LogIoError(const char* fn, const char* text) = 0;
 
-    bool InitPeer();
-    bool PeerFromHostString(const std::string& host, const std::string& scheme);
+    SINCMELNK bool InitPeer();
+    SINCMELNK bool PeerFromHostString(const std::string& host, const std::string& scheme);
 
-    void AddLimit(int code, size_t count, uint64_t duration);
-    bool ReportError(int code);
+    SINCMELNK void AddLimit(int code, size_t count, uint64_t duration);
+    SINCMELNK bool ReportError(int code);
 
-    void SetLastError(SKT_ERROR e, const char* file, int line);
-    const SocketError& GetLastError() const;
+    SINCMELNK void SetLastError(SKT_ERROR e, const char* file, int line);
+    SINCMELNK const SocketError& GetLastError() const;
 
   protected:
     virtual bool SetOptions();

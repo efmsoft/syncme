@@ -2,6 +2,8 @@
 
 #include <stdint.h>
 
+#include <Syncme/Api.h>
+
 namespace Syncme
 {
   constexpr static uint32_t FOREVER = 0xffffffff;
@@ -21,6 +23,6 @@ namespace Syncme
     FAILED = -1
   };
 
-  WAIT_RESULT WaitForSingleObject(HEvent event, uint32_t ms = FOREVER);
-  WAIT_RESULT WaitForMultipleObjects(const EventArray& events, bool waitAll, uint32_t ms = FOREVER);
+  SINCMELNK WAIT_RESULT WaitForSingleObject(HEvent event, uint32_t ms = FOREVER);
+  SINCMELNK WAIT_RESULT WaitForMultipleObjects(const EventArray& events, bool waitAll, uint32_t ms = FOREVER);
 }
