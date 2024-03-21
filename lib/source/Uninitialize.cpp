@@ -1,3 +1,4 @@
+#include <Syncme/Timer/TimerQueue.h>
 #include <Syncme/Uninitialize.h>
 
 using namespace Syncme::Implementation;
@@ -14,4 +15,8 @@ void Syncme::Uninitialize()
 {
   for (UninitializeEntry* p = FirstEntry; p; p = p->Next)
     p->Callback();
+
+  auto& queue = TimerQueue::Ptr();
+  if (queue)
+    queue.reset();
 }

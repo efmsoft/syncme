@@ -37,16 +37,6 @@ namespace Syncme
       SINCMELNK bool CancelTimer(Syncme::Event* timer);
       bool Empty() const;
 
-    protected:
-      friend struct WaitableTimer;
-      friend bool Syncme::CancelWaitableTimer(HEvent timer);
-      friend bool Syncme::SetWaitableTimer(
-        HEvent timer
-        , long dueTime
-        , long period
-        , std::function<void(HEvent)> callback
-      );
-
       static TimerQueuePtr& Ptr();
 
     private:
