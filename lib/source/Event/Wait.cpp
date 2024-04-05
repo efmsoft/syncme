@@ -38,6 +38,14 @@ namespace Syncme
       return Cookies;
     }
 
+    bool Completed(size_t count)
+    {
+      if (WaitAll && count > Bits.size())
+        return false;
+
+      return GetEventState(Event) == STATE::SIGNALLED;
+    }
+
     void EventSignalled(size_t index, uint32_t cookie, bool failed)
     {
       std::lock_guard<std::mutex> guard(Lock);
@@ -118,6 +126,9 @@ WAIT_RESULT Syncme::WaitForMultipleObjects(
   {
     auto cookie = e->RegisterWait(std::bind(&WaitContext::EventSignalled, &context, index++, _1, _2));
     cookies[e.get()] = cookie;
+
+    if (context.Completed(events.size()))
+      break;
   }
 
   WAIT_RESULT rc = context.Wait(ms);

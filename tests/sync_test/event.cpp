@@ -231,3 +231,21 @@ TEST(Sync, close_waiting_event_multiple)
   auto rc = WaitForMultipleObjects(object, true);
   EXPECT_EQ(rc, WAIT_RESULT::FAILED);
 }
+
+TEST(Sync, mupltiple_signalled)
+{
+  HEvent e1 = CreateNotificationEvent(STATE::SIGNALLED);
+  HEvent e2 = CreateSynchronizationEvent(STATE::SIGNALLED);
+
+  EventArray arr(e1, e2);
+
+  auto r = WaitForMultipleObjects(arr, false, 1000);
+  bool f = r == WAIT_RESULT::OBJECT_0;
+  EXPECT_EQ(f, true);
+
+  ResetEvent(e1);
+
+  r = WaitForMultipleObjects(arr, false, 1000);
+  f = r == WAIT_RESULT::OBJECT_1;
+  EXPECT_EQ(f, true);
+}
