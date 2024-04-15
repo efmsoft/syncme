@@ -505,9 +505,24 @@ bool Socket::PeerFromHostString(
     if (addr->ai_family != af || addr->ai_socktype != type)
       continue;
 
-    sockaddr_in& a = *(sockaddr_in*)addr->ai_addr;
-    Peer.IP = inet_ntoa(a.sin_addr);
-    Peer.Port = ntohs(a.sin_port);
+    bool ok = true;
+    int sd = (int)socket(addr->ai_family, addr->ai_socktype, addr->ai_protocol);
+    if (sd != -1)
+    {
+      ok = false;
+      if (connect(sd, addr->ai_addr, (int)addr->ai_addrlen) == 0)
+        ok = true;
+
+      closesocket(sd);
+    }
+
+    if (ok)
+    {
+      sockaddr_in& a = *(sockaddr_in*)addr->ai_addr;
+      Peer.IP = inet_ntoa(a.sin_addr);
+      Peer.Port = ntohs(a.sin_port);
+      break;
+    }
   }
 
   freeaddrinfo(servinfo);
