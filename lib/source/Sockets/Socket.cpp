@@ -462,6 +462,8 @@ bool Socket::InitPeer()
 bool Socket::PeerFromHostString(
   const std::string& host
   , const std::string& scheme
+  , int af
+  , int type
 )
 {
   int port = 80;
@@ -498,9 +500,15 @@ bool Socket::PeerFromHostString(
     return false;
   }
 
-  sockaddr_in& a = *(sockaddr_in*)servinfo->ai_addr;
-  Peer.IP = inet_ntoa(a.sin_addr);
-  Peer.Port = ntohs(a.sin_port);
+  for (struct addrinfo* addr = servinfo; addr != NULL; addr = addr->ai_next)
+  {
+    if (addr->ai_family != af || addr->ai_socktype != type)
+      continue;
+
+    sockaddr_in& a = *(sockaddr_in*)addr->ai_addr;
+    Peer.IP = inet_ntoa(a.sin_addr);
+    Peer.Port = ntohs(a.sin_port);
+  }
 
   freeaddrinfo(servinfo);
   return true;

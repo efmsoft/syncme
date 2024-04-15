@@ -84,7 +84,12 @@ namespace Syncme
     SINCMELNK virtual void LogIoError(const char* fn, const char* text) = 0;
 
     SINCMELNK bool InitPeer();
-    SINCMELNK bool PeerFromHostString(const std::string& host, const std::string& scheme);
+    SINCMELNK bool PeerFromHostString(
+      const std::string& host
+      , const std::string& scheme
+      , int af
+      , int type
+    );
 
     SINCMELNK void AddLimit(int code, size_t count, uint64_t duration);
     SINCMELNK bool ReportError(int code);
