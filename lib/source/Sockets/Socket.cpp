@@ -414,6 +414,48 @@ int Socket::ReadPacket(void* buffer, size_t size)
   return int(p->size());
 }
 
+bool Socket::InitAcceptAddress()
+{
+  union
+  {
+    char saddr4[INET_ADDRSTRLEN];
+    char saddr6[INET6_ADDRSTRLEN];
+  };
+
+  assert(Handle != -1 || Pair->ClosePending);
+
+  if (Handle == -1)
+    return false;
+
+  sockaddr_in addr4{};
+  socklen_t cb = sizeof(addr4);
+  if (getsockname(Handle, (sockaddr*)&addr4, &cb) != -1)
+  {
+    if (inet_ntop(AF_INET, &addr4.sin_addr, saddr4, sizeof(saddr4)) != nullptr)
+    {
+      AcceptIP = saddr4;
+      return true;
+    }
+  }
+
+  sockaddr_in6 addr6{};
+  cb = sizeof(addr6);
+  if (getsockname(Handle, (sockaddr*)&addr6, &cb) == -1)
+  {
+    LogosE("getsockname failed");
+    return false;
+  }
+
+  if (inet_ntop(AF_INET6, &addr6.sin6_addr, saddr6, INET6_ADDRSTRLEN) == nullptr)
+  {
+    LogosE("inet_ntop() failed");
+    return false;
+  }
+
+  AcceptIP = saddr6;
+  return true;
+}
+
 bool Socket::InitPeer()
 {
   union
@@ -426,6 +468,8 @@ bool Socket::InitPeer()
 
   if (Handle == -1)
     return false;
+  
+  InitAcceptAddress();
 
   sockaddr_in addr4{};
   socklen_t cb = sizeof(addr4);

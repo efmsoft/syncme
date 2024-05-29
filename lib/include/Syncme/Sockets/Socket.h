@@ -46,6 +46,7 @@ namespace Syncme
     bool CloseNotify;
     bool BlockingMode;
 
+    std::string AcceptIP;
     SocketError LastError;
     std::map<int, ErrorLimitPtr> Limits;
 
@@ -84,6 +85,7 @@ namespace Syncme
     SINCMELNK virtual void LogIoError(const char* fn, const char* text) = 0;
 
     SINCMELNK bool InitPeer();
+    SINCMELNK bool InitAcceptAddress();
     SINCMELNK bool PeerFromHostString(
       const std::string& host
       , const std::string& scheme
