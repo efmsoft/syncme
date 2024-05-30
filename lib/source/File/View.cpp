@@ -204,7 +204,7 @@ HIFITEM View::Ptr2Offset(void* p) const
       h = HIFITEM(diff + Offset);
     }
   }
-  FILE_ATTRIBUTE_NORMAL;
+  
   return h;
 }
 
