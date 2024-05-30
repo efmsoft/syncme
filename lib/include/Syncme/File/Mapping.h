@@ -2,12 +2,12 @@
 
 #include <Syncme/File/View.h>
 
+typedef struct _SECURITY_ATTRIBUTES SECURITY_ATTRIBUTES, * PSECURITY_ATTRIBUTES, * LPSECURITY_ATTRIBUTES;
+
 namespace Syncme
 {
   namespace File
   {
-    typedef struct _SECURITY_ATTRIBUTES SECURITY_ATTRIBUTES, *PSECURITY_ATTRIBUTES, *LPSECURITY_ATTRIBUTES;
-
   #ifdef UNICODE
     typedef const wchar_t* PCString;
   #else
@@ -65,7 +65,8 @@ namespace Syncme
 
       SINCMELNK virtual HResult Resize(
         uint64_t size
-        , PCString name = NULL
+        , PCString name = nullptr
+        , LPSECURITY_ATTRIBUTES attributes = nullptr
       );
       SINCMELNK virtual void Close();
 

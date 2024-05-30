@@ -3,6 +3,10 @@ add_executable(sync_test ${SOURCES})
 
 target_link_libraries(sync_test LINK_PUBLIC gtest_main syncme  ${LOGME_LIB} ${ALLSTAT_LIB})
 
+target_compile_definitions(sync_test PUBLIC 
+  _SINCME_STATIC_BUILD_
+)
+
 include(GoogleTest)
 gtest_discover_tests(sync_test)
 

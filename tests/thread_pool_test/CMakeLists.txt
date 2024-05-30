@@ -1,7 +1,15 @@
+if(WIN32)
+  set(WINLIBS WS2_32.Lib)
+endif()
+
 file(GLOB_RECURSE SOURCES RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "*.c*" "*.h") 
 add_executable(thread_pool_test ${SOURCES})
 
-target_link_libraries(thread_pool_test LINK_PUBLIC gtest_main syncme ${LOGME_LIB} ${ALLSTAT_LIB})
+target_link_libraries(thread_pool_test LINK_PUBLIC gtest_main syncme ${LOGME_LIB} ${ALLSTAT_LIB} ${WINLIBS})
+
+target_compile_definitions(thread_pool_test PUBLIC 
+  _SINCME_STATIC_BUILD_
+)
 
 include(GoogleTest)
 gtest_discover_tests(thread_pool_test)

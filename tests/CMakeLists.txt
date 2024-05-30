@@ -37,6 +37,10 @@ endif()
 add_subdirectory(sync_test)
 add_subdirectory(thread_pool_test)
 
+if(WIN32)
+add_subdirectory(mapping)
+endif()
+
 set_target_properties(gmock PROPERTIES FOLDER "Tests/gtest")
 set_target_properties(gmock_main PROPERTIES FOLDER "Tests/gtest")
 set_target_properties(gtest PROPERTIES FOLDER "Tests/gtest")

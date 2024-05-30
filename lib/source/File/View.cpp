@@ -134,7 +134,9 @@ void* View::Map(uint64_t offset, uint64_t size)
         if (Image)
         {
           if (!UnmapViewOfFile(Image))
+          {
             LogmeE("UnmapViewOfFile failed. Error: %s", OSERR2);
+          }
         }
 
         assert(HIDW(ViewSize) == 0);

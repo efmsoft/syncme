@@ -11,6 +11,7 @@ target_include_directories(syncme PUBLIC
 )
 
 target_compile_definitions(syncme PRIVATE SYNCME_BUILD)
+target_compile_definitions(syncme PRIVATE _SINCME_STATIC_BUILD_)
 
 if(USE_ALLSTAT)
   target_compile_definitions(syncme PUBLIC USE_ALLSTAT)

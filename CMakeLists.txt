@@ -46,6 +46,8 @@ set(ENABLE_ALLSTAT ON)
 set(ENABLE_LOGME ON)
 set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
 
+get_filename_component(SYNCME_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/lib/include" ABSOLUTE)
+
 find_package(allstat MODULE)
 find_package(logme MODULE)
 find_package(OpenSSL REQUIRED) 

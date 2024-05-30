@@ -10,9 +10,14 @@ add_executable(sockets_lt_et ${TESTMAIN} ${SOURCES} ${OPENSSL_SOURCES})
 
 target_compile_definitions(sockets_lt_et PUBLIC SYNCME_BUILD)
 
+target_compile_definitions(sockets_lt_et PUBLIC 
+  _SINCME_STATIC_BUILD_
+)
+
 if(WIN32)
   target_compile_definitions(sockets_lt_et PUBLIC 
     _CRT_SECURE_NO_WARNINGS
+    _SINCME_STATIC_BUILD_
   )
 endif()
 

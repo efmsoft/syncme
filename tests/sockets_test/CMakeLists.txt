@@ -9,6 +9,9 @@ file(GLOB_RECURSE SOURCES RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "*.c*" "*.h")
 add_executable(sockets_test ${TESTMAIN} ${SOURCES} ${OPENSSL_SOURCES})
 
 target_compile_definitions(sockets_test PUBLIC SYNCME_BUILD)
+target_compile_definitions(sockets_test PUBLIC 
+  _SINCME_STATIC_BUILD_
+)
 
 if(WIN32)
   target_compile_definitions(sockets_test PUBLIC 

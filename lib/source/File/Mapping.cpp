@@ -337,7 +337,11 @@ HResult Mapping::CreateFile(
   return hr;
 }
 
-HResult Mapping::Resize(uint64_t size, PCString name)
+HResult Mapping::Resize(
+  uint64_t size
+  , PCString name
+  , LPSECURITY_ATTRIBUTES attributes
+)
 {
   HResult hr = E_FAIL;
   auto guard = Lock.Lock();
@@ -348,7 +352,10 @@ HResult Mapping::Resize(uint64_t size, PCString name)
 
     if (MapHandle)
     {
-      ::CloseHandle(MapHandle);
+      if (!::CloseHandle(MapHandle))
+      {
+        LogmeE("CloseHandle failed. Error: %s", OSERR2);
+      }
       MapHandle = nullptr;
     }
 
@@ -356,8 +363,9 @@ HResult Mapping::Resize(uint64_t size, PCString name)
 
     MapHandle = ::CreateFileMapping(
       File
-      , nullptr
-      , ReadOnly ? PAGE_READONLY : PAGE_READWRITE
+      , attributes
+      , (ReadOnly ? PAGE_READONLY : PAGE_READWRITE) 
+        | (NoCache ? SEC_NOCACHE | SEC_COMMIT : 0)
       , HIDW(MappingSize)
       , LODW(MappingSize)
       , name
@@ -386,16 +394,18 @@ void Mapping::Close()
   if (MapHandle)
   {
     if (!::CloseHandle(MapHandle))
+    {
       LogmeE("CloseHandle failed. Error: %s", OSERR2);
-
+    }
     MapHandle = nullptr;
   }
 
   if (File != INVALID_HANDLE_VALUE)
   {
     if (!::CloseHandle(File))
+    {
       LogmeE("CloseHandle failed. Error: %s", OSERR2);
-
+    }
     File = INVALID_HANDLE_VALUE;
   }
 
