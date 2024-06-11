@@ -209,6 +209,50 @@ bool Socket::SetOptions()
   return true;
 }
 
+bool Socket::SwitchToBlockingMode()
+{
+  assert(Handle != -1 || Pair->ClosePending);
+
+  if (Handle == -1)
+    return false;
+
+  if (BlockingMode)
+    return true;
+
+  if (BreakRead)
+  {
+    CloseHandle(BreakRead);
+  }
+
+  if (RxEvent)
+  {
+#ifdef _WIN32
+    // To set socket s back to blocking mode, it is first 
+    // necessary to clear the event record associated with 
+    // socket s via a call to WSAEventSelect with lNetworkEvents 
+    // set to zero and the hEventObject parameter set to NULL. 
+    // You can then call ioctlsocket or WSAIoctl to set the 
+    // socket back to blocking mode.
+    WSAEventSelect(Handle, 0, 0);
+#endif
+
+    CloseHandle(RxEvent);
+  }
+  
+  unsigned long on = 0;
+  int e = ioctlsocket(Handle, (int)FIONBIO, &on);
+  if (e == -1)
+  {
+    LogosE("ioctlsocket(FIONBIO) failed");
+    return false;
+  }
+
+  LogI("Blocking mode is switched on");
+  
+  BlockingMode = true;
+  return true;
+}
+
 bool Socket::SwitchToUnblockingMode()
 {
   assert(Handle != -1 || Pair->ClosePending);

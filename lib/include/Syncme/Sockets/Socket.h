@@ -99,10 +99,11 @@ namespace Syncme
     SINCMELNK void SetLastError(SKT_ERROR e, const char* file, int line);
     SINCMELNK const SocketError& GetLastError() const;
 
-  protected:
-    virtual bool SetOptions();
-    virtual bool SwitchToUnblockingMode();
+    SINCMELNK virtual bool SetOptions();
+    SINCMELNK virtual bool SwitchToUnblockingMode();
+    SINCMELNK virtual bool SwitchToBlockingMode();
 
+  protected:
     int WaitRxReady(int timeout);
     int ReadPacket(void* buffer, size_t size);
     virtual int InternalWrite(const void* buffer, size_t size, int timeout) = 0;
