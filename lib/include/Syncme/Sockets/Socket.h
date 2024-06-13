@@ -103,6 +103,8 @@ namespace Syncme
     SINCMELNK virtual bool SwitchToUnblockingMode();
     SINCMELNK virtual bool SwitchToBlockingMode();
 
+    SINCMELNK virtual int InternalRead(void* buffer, size_t size, int timeout) = 0;
+
   protected:
     int WaitRxReady(int timeout);
     int ReadPacket(void* buffer, size_t size);

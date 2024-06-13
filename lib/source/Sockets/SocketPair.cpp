@@ -129,3 +129,133 @@ const char* SocketPair::WhoAmI(Socket* socket) const
 
   return "nobody";
 }
+
+int SocketPair::Read(std::vector<char>& buffer, SocketPtr& from, int timeout)
+{
+  return Read(&buffer[0], buffer.size(), from, timeout);
+}
+
+int SocketPair::Read(void* buffer, size_t size, SocketPtr& from, int timeout)
+{
+  int n = 0;
+  from.reset();
+
+  if (Server == nullptr && Client == nullptr)
+    return -1;
+
+  if (Server == nullptr)
+  {
+    n = Client->Read(buffer, size, timeout);
+    if (n > 0)
+      from = Client;
+
+    return n;
+  }
+
+  if (Client == nullptr)
+  {
+    n = Server->Read(buffer, size, timeout);
+    if (n > 0)
+      from = Server;
+
+    return n;
+  }
+
+  auto start = GetTimeInMillisec();
+
+  EventArray events(
+    GetExitEvent()
+    , GetCloseEvent()
+    , Server->RxEvent
+    , Server->BreakRead
+    , Client->RxEvent
+    , Client->BreakRead
+  );
+
+  for (int loops = 0;; ++loops)
+  {
+    auto t = GetTimeInMillisec();
+    uint32_t milliseconds = FOREVER;
+
+    if (timeout != FOREVER)
+    {
+      if (t - start >= timeout)
+      {
+        Server->SKT_SET_LAST_ERROR2(Server->Peer.Disconnected ? SKT_ERROR::GRACEFUL_DISCONNECT : SKT_ERROR::TIMEOUT);
+        Client->SKT_SET_LAST_ERROR2(Client->Peer.Disconnected ? SKT_ERROR::GRACEFUL_DISCONNECT : SKT_ERROR::TIMEOUT);
+        return 0;
+      }
+
+      milliseconds = uint32_t(start + timeout - t);
+    }
+
+    auto rc = WaitForMultipleObjects(events, false, milliseconds);
+    if (rc == WAIT_RESULT::OBJECT_0 || rc == WAIT_RESULT::OBJECT_1)
+    {
+      Server->SKT_SET_LAST_ERROR(CONNECTION_ABORTED);
+      Client->SKT_SET_LAST_ERROR(CONNECTION_ABORTED);
+      return -1;
+    }
+
+    if (rc == WAIT_RESULT::OBJECT_3)
+    {
+      LogI("Break server read");
+      Server->SKT_SET_LAST_ERROR(NONE);
+      return 0;
+    }
+
+    if (rc == WAIT_RESULT::OBJECT_5)
+    {
+      LogI("Break client read");
+      Client->SKT_SET_LAST_ERROR(NONE);
+      return 0;
+    }
+
+    if (rc == WAIT_RESULT::TIMEOUT)
+    {
+      t = GetTimeInMillisec();
+      if (t - start >= timeout)
+      {
+        Server->SKT_SET_LAST_ERROR2(Server->Peer.Disconnected ? SKT_ERROR::GRACEFUL_DISCONNECT : SKT_ERROR::TIMEOUT);
+        Client->SKT_SET_LAST_ERROR2(Client->Peer.Disconnected ? SKT_ERROR::GRACEFUL_DISCONNECT : SKT_ERROR::TIMEOUT);
+        return 0;
+      }
+
+      continue;
+    }
+
+    if (rc == WAIT_RESULT::FAILED)
+    {
+      Server->SKT_SET_LAST_ERROR(CONNECTION_ABORTED);
+      Client->SKT_SET_LAST_ERROR(CONNECTION_ABORTED);
+      return -1;
+    }
+
+    SocketPtr socket = rc == WAIT_RESULT::OBJECT_2 ? Server : Client;
+
+    int netev = GetSocketEvents(socket->RxEvent);
+    if (netev & EVENT_CLOSE)
+    {
+      socket->Peer.Disconnected = true;
+      socket->Peer.When = GetTimeInMillisec();
+
+      int tout = timeout;
+      timeout = 0;
+
+      LogW("%s: peer disconnected. timeout %i -> %i", WhoAmI(socket.get()), tout, timeout);
+
+      // We have to drain input buffer before closing socket
+    }
+
+    if (netev & EVENT_READ)
+    {
+      n = socket->InternalRead(buffer, size, 0);
+      from = socket;
+      break;
+    }
+  }
+
+  Server->SKT_SET_LAST_ERROR(NONE);
+  Client->SKT_SET_LAST_ERROR(NONE);
+  return n;
+}

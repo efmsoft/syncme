@@ -28,6 +28,6 @@ namespace Syncme
 
   private:
     int InternalWrite(const void* buffer, size_t size, int timeout) override;
-    int InternalRead(void* buffer, size_t size, int timeout);
+    int InternalRead(void* buffer, size_t size, int timeout) override;
   };
 }

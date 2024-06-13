@@ -24,6 +24,7 @@ namespace Syncme
 
   private:
     int InternalWrite(const void* buffer, size_t size, int timeout) override;
+    int InternalRead(void* buffer, size_t size, int timeout) override;
     int ReadPending(void* buffer, size_t size);
     int TranslateSSLError(int n, const char* method);
   };

@@ -10,6 +10,8 @@
 #include <windows.h>
 #endif
 
+#pragma warning(disable : 6262)
+
 using namespace Syncme;
 
 SSLSocket::SSLSocket(SocketPair* pair, SSL* ssl)
@@ -221,6 +223,14 @@ int SSLSocket::InternalWrite(const void* buffer, size_t size, int timeout)
 
   int n = SSL_write(Ssl, buffer, int(size));
   return TranslateSSLError(n, "SSL_write");
+}
+
+int SSLSocket::InternalRead(void* buffer, size_t size, int timeout)
+{
+  std::lock_guard<std::mutex> guard(SslLock);
+
+  int n = SSL_read(Ssl, buffer, int(size));
+  return TranslateSSLError(n, "SSL_read");
 }
 
 int SSLSocket::TranslateSSLError(int n, const char* method)
