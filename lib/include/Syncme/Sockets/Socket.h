@@ -47,6 +47,8 @@ namespace Syncme
     bool BlockingMode;
 
     std::string AcceptIP;
+    int AcceptPort;
+
     SocketError LastError;
     std::map<int, ErrorLimitPtr> Limits;
 

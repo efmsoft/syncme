@@ -23,6 +23,7 @@ Socket::Socket(SocketPair* pair, int handle, bool enableClose)
   , Configured(false)
   , CloseNotify(true)
   , BlockingMode(true)
+  , AcceptPort(0)
   , Pid(-1)
 {
 }
@@ -478,6 +479,7 @@ bool Socket::InitAcceptAddress()
     if (inet_ntop(AF_INET, &addr4.sin_addr, saddr4, sizeof(saddr4)) != nullptr)
     {
       AcceptIP = saddr4;
+      AcceptPort = htons(addr4.sin_port);
       return true;
     }
   }
@@ -497,6 +499,7 @@ bool Socket::InitAcceptAddress()
   }
 
   AcceptIP = saddr6;
+  AcceptPort = htons(addr4.sin_port);
   return true;
 }
 
