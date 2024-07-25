@@ -5,7 +5,7 @@ file(GLOB_RECURSE SOURCES ${SRCROOT}/*.cpp)
 
 message(STATUS "Syncme dynamic added SYNCME_INCLUDE_DIR=${SYNCME_INCLUDE_DIR}")
 
-add_library(syncmed SHARED ${SOURCES})
+add_library(syncmed SHARED ${SOURCES} ${SYNCME_VERSION_RC})
 
 target_include_directories(syncmed PRIVATE
   ${SYNCME_INCLUDE_DIR}
