@@ -139,11 +139,13 @@ int SocketPair::Read(void* buffer, size_t size, SocketPtr& from, int timeout)
 {
   int n = 0;
   from.reset();
+  auto serverValid = Server != nullptr && Server->RxEvent != nullptr;
+  auto clientValid = Client != nullptr && Client->RxEvent != nullptr;
 
-  if (Server == nullptr && Client == nullptr)
+  if (!serverValid && !clientValid)
     return -1;
 
-  if (Server == nullptr)
+  if (clientValid)
   {
     n = Client->Read(buffer, size, timeout);
     if (n > 0)
@@ -152,7 +154,7 @@ int SocketPair::Read(void* buffer, size_t size, SocketPtr& from, int timeout)
     return n;
   }
 
-  if (Client == nullptr)
+  if (serverValid)
   {
     n = Server->Read(buffer, size, timeout);
     if (n > 0)
