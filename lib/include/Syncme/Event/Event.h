@@ -43,6 +43,9 @@ namespace Syncme
     SINCMELNK virtual uint32_t Signature() const;
     SINCMELNK virtual void OnCloseHandle();
 
+    SINCMELNK virtual uint32_t RegisterWait(TWaitComplete complete);
+    SINCMELNK virtual bool UnregisterWait(uint32_t cookie);
+
   protected:
 
     void SetEvent(Event* source = nullptr);
@@ -60,9 +63,6 @@ namespace Syncme
     friend bool Syncme::SetEvent(HEvent event);
     friend bool Syncme::ResetEvent(HEvent event);
     friend STATE Syncme::GetEventState(HEvent event);
-
-    virtual uint32_t RegisterWait(TWaitComplete complete);
-    virtual bool UnregisterWait(uint32_t cookie);
 
     void AddRef(Event* dup);
     void RemoveRef(Event* dup);

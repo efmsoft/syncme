@@ -1,5 +1,6 @@
 #include <cassert>
 
+#include <Syncme/Event/Event.h>
 #include <Syncme/Logger/Log.h>
 #include <Syncme/Sleep.h>
 #include <Syncme/Sockets/API.h>
@@ -25,7 +26,47 @@ Socket::Socket(SocketPair* pair, int handle, bool enableClose)
   , BlockingMode(true)
   , AcceptPort(0)
   , Pid(-1)
+#if SKTEPOLL
+  , Poll(-1)
+  , EventDescriptor(-1)
+  , Result(WAIT_RESULT::TIMEOUT)
+  , EventsMask(0)
+#endif
 {
+#if SKTEPOLL
+  Poll = epoll_create(1);
+  if (Poll == -1)
+  {
+    LogosE("epoll_create failed");
+    return;
+  }
+
+  EventDescriptor = eventfd(0, EFD_NONBLOCK);
+  if (EventDescriptor == -1)
+  {
+    LogosE("eventfd failed");
+    return;
+  }
+
+  epoll_event ev{};
+  ev.data.fd = EventDescriptor;
+  ev.events |= EPOLLIN;
+
+  if (epoll_ctl(Poll, EPOLL_CTL_ADD, EventDescriptor, &ev) == -1)
+  {
+    LogosE("epoll_ctl(EPOLL_CTL_ADD) failed for EventDescriptor");
+    return;
+  }
+
+  ev.data.fd = Handle;
+  ev.events = EPOLLIN | EPOLLRDHUP;
+
+  if (epoll_ctl(Poll, EPOLL_CTL_ADD, Handle, &ev) == -1)
+  {
+    LogosE("epoll_ctl(EPOLL_CTL_ADD) failed for Handle");
+    return;
+  }
+#endif
 }
 
 Socket::~Socket()
@@ -34,6 +75,39 @@ Socket::~Socket()
 
   CloseHandle(RxEvent);
   CloseHandle(BreakRead);
+
+#if SKTEPOLL
+  if (EventDescriptor != -1)
+  {
+    epoll_event ev{};
+    ev.data.fd = EventDescriptor;
+    ev.events |= EPOLLIN;
+    if (epoll_ctl(Poll, EPOLL_CTL_DEL, EventDescriptor, &ev) == -1)
+    {
+      LogosE("epoll_ctl(EPOLL_CTL_DEL) failed for EventDescriptor");
+    }
+  }
+
+  if (Poll != -1)
+  {
+    if (close(Poll) == -1)
+    {
+      LogosE("close(Poll) failed");
+    }
+
+    Poll = -1;
+  }
+
+  if (EventDescriptor != -1)
+  {
+    if (close(EventDescriptor) == -1)
+    {
+      LogosE("close(EventDescriptor) failed");
+    }
+
+    EventDescriptor = -1;
+  }
+#endif
 }
 
 void Socket::SetLastError(SKT_ERROR e, const char* file, int line)
@@ -49,6 +123,19 @@ const SocketError& Socket::GetLastError() const
 int Socket::Detach(bool* enableClose)
 {
   auto guard = Lock.Lock();
+
+#if SKTEPOLL
+  if (Handle != -1)
+  {
+    epoll_event ev{};
+    ev.data.fd = Handle;
+    ev.events |= EPOLLIN;
+    if (epoll_ctl(Poll, EPOLL_CTL_DEL, Handle, &ev) == -1)
+    {
+      LogosE("epoll_ctl(EPOLL_CTL_DEL) failed for Handle");
+    }
+  }
+#endif
 
   int h = Handle;
   Handle = -1;
@@ -295,6 +382,86 @@ bool Socket::SwitchToUnblockingMode()
   return true;
 }
 
+#if SKTEPOLL
+void Socket::EventSignalled(WAIT_RESULT r, uint32_t cookie, bool failed)
+{
+#if SKTEPOLL
+  Result = r;
+
+  // write() will force epoll_wait to exit
+
+  uint64_t value = 1;
+  auto s = write(Event, &value, sizeof(value));
+  if (s != sizeof(value))
+  {
+    LogE("write failed");
+  }
+#endif
+}
+
+WAIT_RESULT Socket::FastWaitForMultipleObjects(int timeout)
+{
+  using namespace std::placeholders;
+
+  Result = WAIT_RESULT::TIMEOUT;
+  EventsMask = 0;
+
+  auto c0 = Pair->GetExitEvent()->RegisterWait(
+    std::bind(&Socket::EventSignalled, this, WAIT_RESULT::OBJECT_0, _1, _2)
+  );
+
+  auto c1 = Pair->GetCloseEvent()->RegisterWait(
+    std::bind(&Socket::EventSignalled, this, WAIT_RESULT::OBJECT_1, _1, _2)
+  );
+
+  auto c3 = BreakRead->RegisterWait(
+    std::bind(&Socket::EventSignalled, this, WAIT_RESULT::OBJECT_3, _1, _2)
+  );
+
+  epoll_event events[2]{};
+  int n = epoll_wait(Poll, &events[0], 2, timeout);
+  int en = errno;
+  
+  Pair->GetExitEvent()->UnregisterWait(c0);
+  Pair->GetCloseEvent()->UnregisterWait(c1);
+  BreakRead->UnregisterWait(c3);
+
+  if (n < 0)
+  {
+    if (en != EINTR)
+    {
+      LogE("epoll_wait failed. Error %i", en);
+      Result = WAIT_RESULT::FAILED;
+    }
+
+    n = 0;
+  }
+
+  for (int i = 0; i < n; ++i)
+  {
+    epoll_event& e = events[i];
+
+    if (e.data.fd == EventDescriptor)
+    {
+      uint64_t value = 0;
+      write(EventDescriptor, &value, sizeof(value));
+    }
+    else if (e.data.fd == Handle)
+    {
+      if (e.events & EPOLLIN)
+        EventsMask |= EVENT_READ;
+
+      if (e.events & EPOLLRDHUP)
+        EventsMask |= EVENT_CLOSE;
+
+      Result = WAIT_RESULT::OBJECT_2;
+    }
+  }
+
+  return Result;
+}
+#endif
+
 int Socket::WaitRxReady(int timeout)
 {
   assert(RxEvent);
@@ -304,7 +471,13 @@ int Socket::WaitRxReady(int timeout)
     timeout = LITTLE_WAIT;
 
   auto start = GetTimeInMillisec();
-  EventArray events(Pair->GetExitEvent(), Pair->GetCloseEvent(), RxEvent, BreakRead);
+  
+  EventArray events(
+    Pair->GetExitEvent()
+    , Pair->GetCloseEvent()
+    , RxEvent
+    , BreakRead
+  );
 
   for (int loops = 0;; ++loops)
   {
@@ -322,7 +495,13 @@ int Socket::WaitRxReady(int timeout)
       milliseconds = uint32_t(start + timeout - t);
     }
 
-    auto rc = WaitForMultipleObjects(events, false, milliseconds);
+    auto rc = 
+#if SKTEPOLL
+      FastWaitForMultipleObjects(milliseconds);
+#else
+      WaitForMultipleObjects(events, false, milliseconds);
+#endif
+
     if (rc == WAIT_RESULT::OBJECT_0 || rc == WAIT_RESULT::OBJECT_1)
     {
       SKT_SET_LAST_ERROR(CONNECTION_ABORTED);
@@ -354,7 +533,13 @@ int Socket::WaitRxReady(int timeout)
       return -1;
     }
 
-    int netev = GetSocketEvents(RxEvent);
+    int netev = 
+#if SKTEPOLL
+      EventsMask
+#else
+      GetSocketEvents(RxEvent);
+#endif
+
     if (netev & EVENT_CLOSE)
     {
       Peer.Disconnected = true;

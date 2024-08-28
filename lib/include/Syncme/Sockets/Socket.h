@@ -13,6 +13,16 @@
 #include <Syncme/Sockets/SocketError.h>
 #include <Syncme/Sync.h>
 
+// Set SKT_EPOLL to 1 if we should use an alternative 
+// method of wait in WaitRxEvent on Linux
+#define SKT_EPOLL 0
+
+#if !defined(_WIN32) && SKT_EPOLL
+#define SKTEPOLL 1
+#else
+#define SKTEPOLL 0
+#endif
+
 namespace Syncme
 {
   struct SocketPair;
@@ -58,6 +68,13 @@ namespace Syncme
     PacketQueue Packets;
 
     int Pid;
+
+#if SKTEPOLL
+    int Poll;
+    int EventDescriptor;
+    WAIT_RESULT Result;
+    int EventsMask;
+#endif
 
   public:
     SINCMELNK Socket(SocketPair* pair, int handle = -1, bool enableClose = true);
@@ -108,6 +125,12 @@ namespace Syncme
     SINCMELNK virtual int InternalRead(void* buffer, size_t size, int timeout) = 0;
 
   protected:
+
+#if SKTEPOLL
+    WAIT_RESULT FastWaitForMultipleObjects(int timeout);
+    void EventSignalled(WAIT_RESULT r, uint32_t cookie, bool failed);
+#endif
+
     int WaitRxReady(int timeout);
     int ReadPacket(void* buffer, size_t size);
     virtual int InternalWrite(const void* buffer, size_t size, int timeout) = 0;
