@@ -32,13 +32,16 @@ FetchContent_MakeAvailable(googletest)
 if(USE_LOGME)
   add_subdirectory(sockets_test)
   add_subdirectory(sockets_lt_et)
+  if(NOT WIN32)
+    add_subdirectory(skt_epoll)
+  endif()
 endif()
 
 add_subdirectory(sync_test)
 add_subdirectory(thread_pool_test)
 
 if(WIN32)
-add_subdirectory(mapping)
+  add_subdirectory(mapping)
 endif()
 
 set_target_properties(gmock PROPERTIES FOLDER "Tests/gtest")

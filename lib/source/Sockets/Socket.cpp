@@ -18,6 +18,8 @@
 #endif
 
 using namespace Syncme;
+using namespace std::placeholders;
+
 
 Socket::Socket(SocketPair* pair, int handle, bool enableClose)
   : Pair(pair)
@@ -32,8 +34,10 @@ Socket::Socket(SocketPair* pair, int handle, bool enableClose)
 #if SKTEPOLL
   , Poll(-1)
   , EventDescriptor(-1)
-  , Result(WAIT_RESULT::TIMEOUT)
   , EventsMask(0)
+  , ExitEventCookie(0)
+  , CloseEventCookie(0)
+  , BreakEventCookie(0)
 #endif
 {
 #if SKTEPOLL
@@ -60,7 +64,7 @@ Socket::Socket(SocketPair* pair, int handle, bool enableClose)
     LogosE("epoll_ctl(EPOLL_CTL_ADD) failed for EventDescriptor");
     return;
   }
-#endif
+#endif  
 }
 
 Socket::~Socket()
@@ -68,6 +72,12 @@ Socket::~Socket()
   Close();
 
   CloseHandle(RxEvent);
+
+#if SKTEPOLL
+  if (BreakRead)
+    BreakRead->UnregisterWait(BreakEventCookie);
+#endif
+
   CloseHandle(BreakRead);
 
 #if SKTEPOLL
@@ -121,6 +131,18 @@ int Socket::Detach(bool* enableClose)
 #if SKTEPOLL
   if (Handle != -1)
   {
+    if (ExitEventCookie)
+    {
+      Pair->GetExitEvent()->UnregisterWait(ExitEventCookie);
+      ExitEventCookie = 0;
+    }
+
+    if (CloseEventCookie)
+    {
+      Pair->GetCloseEvent()->UnregisterWait(CloseEventCookie);
+      CloseEventCookie = 0;
+    }
+
     epoll_event ev{};
     ev.data.fd = Handle;
     ev.events |= EPOLLIN;
@@ -167,6 +189,14 @@ bool Socket::Attach(int socket, bool enableClose)
   EnableClose = enableClose;
 
 #if SKTEPOLL
+  ExitEventCookie = Pair->GetExitEvent()->RegisterWait(
+    std::bind(&Socket::EventSignalled, this, WAIT_RESULT::OBJECT_0, _1, _2)
+  );
+
+  CloseEventCookie = Pair->GetCloseEvent()->RegisterWait(
+    std::bind(&Socket::EventSignalled, this, WAIT_RESULT::OBJECT_1, _1, _2)
+  );
+
   epoll_event ev{};
   ev.data.fd = Handle;
   ev.events = EPOLLIN | EPOLLRDHUP;
@@ -314,6 +344,9 @@ bool Socket::SwitchToBlockingMode()
 
   if (BreakRead)
   {
+#if SKTEPOLL
+    BreakRead->UnregisterWait(BreakEventCookie);
+#endif
     CloseHandle(BreakRead);
   }
 
@@ -361,6 +394,10 @@ bool Socket::SwitchToUnblockingMode()
       LogE("CreateCommonEvent failed");
       return false;
     }
+
+    BreakEventCookie = BreakRead->RegisterWait(
+      std::bind(&Socket::EventSignalled, this, WAIT_RESULT::OBJECT_3, _1, _2)
+    );
   }
 
   if (RxEvent == nullptr)
@@ -391,11 +428,9 @@ bool Socket::SwitchToUnblockingMode()
 void Socket::EventSignalled(WAIT_RESULT r, uint32_t cookie, bool failed)
 {
 #if SKTEPOLL
-  Result = r;
-
   // write() will force epoll_wait to exit
-
-  uint64_t value = 1;
+  // we have to write a value > 0
+  uint64_t value = uint64_t(r) + 1;
   auto s = write(EventDescriptor, &value, sizeof(value));
   if (s != sizeof(value))
   {
@@ -406,41 +441,42 @@ void Socket::EventSignalled(WAIT_RESULT r, uint32_t cookie, bool failed)
 
 WAIT_RESULT Socket::FastWaitForMultipleObjects(int timeout)
 {
-  using namespace std::placeholders;
+  //
+  // If there data to read on the socked, just return OBJECT_2
+  //
+  fd_set rfds;
+  FD_ZERO(&rfds);
+  FD_SET(Handle, &rfds);
 
-  Result = WAIT_RESULT::TIMEOUT;
-  EventsMask = 0;
+  struct timeval tv;
+  tv.tv_sec = 0;
+  tv.tv_usec = 0;
 
-  auto c0 = Pair->GetExitEvent()->RegisterWait(
-    std::bind(&Socket::EventSignalled, this, WAIT_RESULT::OBJECT_0, _1, _2)
-  );
-
-  auto c1 = Pair->GetCloseEvent()->RegisterWait(
-    std::bind(&Socket::EventSignalled, this, WAIT_RESULT::OBJECT_1, _1, _2)
-  );
-
-  auto c3 = BreakRead->RegisterWait(
-    std::bind(&Socket::EventSignalled, this, WAIT_RESULT::OBJECT_3, _1, _2)
-  );
+  if (select(Handle + 1, &rfds, nullptr, nullptr, &tv) > 0)
+  {
+    if (FD_ISSET(Handle, &rfds))
+    {
+      EventsMask |= EVENT_READ;
+      return WAIT_RESULT::OBJECT_2;
+    }
+  }
 
   epoll_event events[2]{};
   int n = epoll_wait(Poll, &events[0], 2, timeout);
   int en = errno;
   
-  Pair->GetExitEvent()->UnregisterWait(c0);
-  Pair->GetCloseEvent()->UnregisterWait(c1);
-  BreakRead->UnregisterWait(c3);
-
   if (n < 0)
   {
     if (en != EINTR)
     {
       LogE("epoll_wait failed. Error %i", en);
-      Result = WAIT_RESULT::FAILED;
+      return WAIT_RESULT::FAILED;
     }
 
     n = 0;
   }
+
+  WAIT_RESULT result = WAIT_RESULT::TIMEOUT;
 
   for (int i = 0; i < n; ++i)
   {
@@ -449,7 +485,18 @@ WAIT_RESULT Socket::FastWaitForMultipleObjects(int timeout)
     if (e.data.fd == EventDescriptor)
     {
       uint64_t value = 0;
-      auto n = write(EventDescriptor, &value, sizeof(value));
+      auto n = read(EventDescriptor, &value, sizeof(value));
+      if (n != sizeof(value))
+      {
+        LogosE("read failed");
+      }
+      else
+      {
+        result = WAIT_RESULT(value - 1);
+      }
+
+      value = 0;
+      n = write(EventDescriptor, &value, sizeof(value));
       if (n != sizeof(value))
       {
         LogosE("write failed");
@@ -463,11 +510,11 @@ WAIT_RESULT Socket::FastWaitForMultipleObjects(int timeout)
       if (e.events & EPOLLRDHUP)
         EventsMask |= EVENT_CLOSE;
 
-      Result = WAIT_RESULT::OBJECT_2;
+      result = WAIT_RESULT::OBJECT_2;
     }
   }
 
-  return Result;
+  return result;
 }
 #endif
 
@@ -481,12 +528,14 @@ int Socket::WaitRxReady(int timeout)
 
   auto start = GetTimeInMillisec();
   
+#if SKTEPOLL == 0
   EventArray events(
     Pair->GetExitEvent()
     , Pair->GetCloseEvent()
     , RxEvent
     , BreakRead
   );
+#endif
 
   for (int loops = 0;; ++loops)
   {
@@ -504,11 +553,10 @@ int Socket::WaitRxReady(int timeout)
       milliseconds = uint32_t(start + timeout - t);
     }
 
-    auto rc = 
 #if SKTEPOLL
-      FastWaitForMultipleObjects(milliseconds);
+    auto rc = FastWaitForMultipleObjects(milliseconds);
 #else
-      WaitForMultipleObjects(events, false, milliseconds);
+    auto rc = WaitForMultipleObjects(events, false, milliseconds);
 #endif
 
     if (rc == WAIT_RESULT::OBJECT_0 || rc == WAIT_RESULT::OBJECT_1)
@@ -542,11 +590,10 @@ int Socket::WaitRxReady(int timeout)
       return -1;
     }
 
-    int netev = 
 #if SKTEPOLL
-      EventsMask;
+    int netev =EventsMask;
 #else
-      GetSocketEvents(RxEvent);
+    int netev = GetSocketEvents(RxEvent);
 #endif
 
     if (netev & EVENT_CLOSE)

@@ -23,6 +23,8 @@ SocketPair::SocketPair(CHANNEL& ch, HEvent exitEvent, ConfigPtr config)
 
 SocketPair::~SocketPair()
 {
+  Close();
+  
   if (CloseEvent)
     CloseHandle(CloseEvent);
 }

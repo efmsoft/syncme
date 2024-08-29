@@ -72,8 +72,10 @@ namespace Syncme
 #if SKTEPOLL
     int Poll;
     int EventDescriptor;
-    WAIT_RESULT Result;
     int EventsMask;
+    uint32_t ExitEventCookie;
+    uint32_t CloseEventCookie;
+    uint32_t BreakEventCookie;
 #endif
 
   public:
@@ -124,10 +126,13 @@ namespace Syncme
 
     SINCMELNK virtual int InternalRead(void* buffer, size_t size, int timeout) = 0;
 
+#if SKTEPOLL
+    SINCMELNK WAIT_RESULT FastWaitForMultipleObjects(int timeout);
+#endif
+
   protected:
 
 #if SKTEPOLL
-    WAIT_RESULT FastWaitForMultipleObjects(int timeout);
     void EventSignalled(WAIT_RESULT r, uint32_t cookie, bool failed);
 #endif
 

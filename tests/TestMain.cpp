@@ -2,6 +2,10 @@
 
 #include <Syncme/Sockets/API.h>
 
+#include "Initialization.h"
+
+InitializationItem* InitializationListHead;
+
 #ifndef _WIN32
 void BlockSignal(int signal_to_block)
 {
@@ -28,7 +32,16 @@ int main(int argc, char* argv[])
   BlockSignal(SIGPIPE);
 #endif
 
+  for (auto* p = InitializationListHead; p; p = p->Next)
+  {
+    if (p->InitRoutine() == false)
+      exit(1);
+  }
+
   int rc = RUN_ALL_TESTS();
+
+  for (auto* p = InitializationListHead; p; p = p->Next)
+    p->ExitRoutine();
 
 #ifdef _WIN32
   WSACleanup();
