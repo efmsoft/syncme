@@ -394,10 +394,11 @@ bool Socket::SwitchToUnblockingMode()
       LogE("CreateCommonEvent failed");
       return false;
     }
-
+#if SKTEPOLL
     BreakEventCookie = BreakRead->RegisterWait(
       std::bind(&Socket::EventSignalled, this, WAIT_RESULT::OBJECT_3, _1, _2)
     );
+#endif
   }
 
   if (RxEvent == nullptr)
