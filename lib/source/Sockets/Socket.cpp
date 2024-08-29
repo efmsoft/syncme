@@ -442,26 +442,6 @@ void Socket::EventSignalled(WAIT_RESULT r, uint32_t cookie, bool failed)
 
 WAIT_RESULT Socket::FastWaitForMultipleObjects(int timeout)
 {
-  //
-  // If there data to read on the socked, just return OBJECT_2
-  //
-  fd_set rfds;
-  FD_ZERO(&rfds);
-  FD_SET(Handle, &rfds);
-
-  struct timeval tv;
-  tv.tv_sec = 0;
-  tv.tv_usec = 0;
-
-  if (select(Handle + 1, &rfds, nullptr, nullptr, &tv) > 0)
-  {
-    if (FD_ISSET(Handle, &rfds))
-    {
-      EventsMask |= EVENT_READ;
-      return WAIT_RESULT::OBJECT_2;
-    }
-  }
-
   epoll_event events[2]{};
   int n = epoll_wait(Poll, &events[0], 2, timeout);
   int en = errno;
