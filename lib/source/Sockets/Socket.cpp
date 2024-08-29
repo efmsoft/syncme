@@ -592,7 +592,8 @@ int Socket::WaitRxReady(int timeout)
     }
 
 #if SKTEPOLL
-    int netev =EventsMask;
+    int netev = EventsMask;
+    EventsMask = 0;
 #else
     int netev = GetSocketEvents(RxEvent);
 #endif
