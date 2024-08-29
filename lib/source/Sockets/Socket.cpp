@@ -10,6 +10,9 @@
 
 #ifndef _WIN32
 #define strtok_s strtok_r
+#include <fcntl.h>
+#include <sys/epoll.h>
+#include <sys/eventfd.h>
 #else
 #include <mstcpip.h>
 #endif
@@ -55,15 +58,6 @@ Socket::Socket(SocketPair* pair, int handle, bool enableClose)
   if (epoll_ctl(Poll, EPOLL_CTL_ADD, EventDescriptor, &ev) == -1)
   {
     LogosE("epoll_ctl(EPOLL_CTL_ADD) failed for EventDescriptor");
-    return;
-  }
-
-  ev.data.fd = Handle;
-  ev.events = EPOLLIN | EPOLLRDHUP;
-
-  if (epoll_ctl(Poll, EPOLL_CTL_ADD, Handle, &ev) == -1)
-  {
-    LogosE("epoll_ctl(EPOLL_CTL_ADD) failed for Handle");
     return;
   }
 #endif
@@ -171,6 +165,17 @@ bool Socket::Attach(int socket, bool enableClose)
 
   Handle = socket;
   EnableClose = enableClose;
+
+#if SKTEPOLL
+  epoll_event ev{};
+  ev.data.fd = Handle;
+  ev.events = EPOLLIN | EPOLLRDHUP;
+
+  if (epoll_ctl(Poll, EPOLL_CTL_ADD, Handle, &ev) == -1)
+  {
+    LogosE("epoll_ctl(EPOLL_CTL_ADD) failed for Handle");
+  }
+#endif
 
   return true;
 }
@@ -391,7 +396,7 @@ void Socket::EventSignalled(WAIT_RESULT r, uint32_t cookie, bool failed)
   // write() will force epoll_wait to exit
 
   uint64_t value = 1;
-  auto s = write(Event, &value, sizeof(value));
+  auto s = write(EventDescriptor, &value, sizeof(value));
   if (s != sizeof(value))
   {
     LogE("write failed");
@@ -444,7 +449,11 @@ WAIT_RESULT Socket::FastWaitForMultipleObjects(int timeout)
     if (e.data.fd == EventDescriptor)
     {
       uint64_t value = 0;
-      write(EventDescriptor, &value, sizeof(value));
+      auto n = write(EventDescriptor, &value, sizeof(value));
+      if (n != sizeof(value))
+      {
+        LogosE("write failed");
+      }
     }
     else if (e.data.fd == Handle)
     {
@@ -535,7 +544,7 @@ int Socket::WaitRxReady(int timeout)
 
     int netev = 
 #if SKTEPOLL
-      EventsMask
+      EventsMask;
 #else
       GetSocketEvents(RxEvent);
 #endif

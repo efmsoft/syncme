@@ -15,7 +15,7 @@
 
 // Set SKT_EPOLL to 1 if we should use an alternative 
 // method of wait in WaitRxEvent on Linux
-#define SKT_EPOLL 0
+#define SKT_EPOLL 1
 
 #if !defined(_WIN32) && SKT_EPOLL
 #define SKTEPOLL 1

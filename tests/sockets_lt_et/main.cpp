@@ -146,6 +146,13 @@ static void ClientThread(ThreadPool::Pool& pool, HEvent readyEvent, HEvent dataR
     exit(1);
   }
 
+  int reuse = 1;
+  if (setsockopt(h, SOL_SOCKET, SO_REUSEADDR, (const char*)&reuse, sizeof(reuse)) < 0)
+  {
+    LogosE("setsockopt(SO_REUSEADDR) failed");
+    exit(1);
+  }
+
   sockaddr_in addr{};
   addr.sin_family = AF_INET;
   addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);

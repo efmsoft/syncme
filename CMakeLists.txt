@@ -54,7 +54,7 @@ find_package(OpenSSL REQUIRED)
 
 enable_testing()
 add_subdirectory(lib ../out/Static)
-add_subdirectory(dynamic ../out/Dynamic)
+#add_subdirectory(dynamic ../out/Dynamic)
 
 if(ENABLE_LOGME AND TARGET logme)
   add_subdirectory(examples ../out/Examples)
