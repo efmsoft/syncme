@@ -428,7 +428,6 @@ bool Socket::SwitchToUnblockingMode()
 #if SKTEPOLL
 void Socket::EventSignalled(WAIT_RESULT r, uint32_t cookie, bool failed)
 {
-#if SKTEPOLL
   // write() will force epoll_wait to exit
   // we have to write a value > 0
   uint64_t value = uint64_t(r) + 1;
@@ -437,11 +436,34 @@ void Socket::EventSignalled(WAIT_RESULT r, uint32_t cookie, bool failed)
   {
     LogE("write failed");
   }
-#endif
+}
+
+void Socket::ResetEventObject()
+{
+  uint64_t value = 0;
+  n = write(EventDescriptor, &value, sizeof(value));
+  if (n != sizeof(value))
+  {
+    LogosE("write failed");
+  }
 }
 
 WAIT_RESULT Socket::FastWaitForMultipleObjects(int timeout)
 {
+  ResetEventObject();
+
+  if (GetEventState(Pair->GetExitEvent()) == STATE::SIGNALLED)
+    return WAIT_RESULT::OBJECT_0;
+
+  if (GetEventState(Pair->GetCloseEvent()) == STATE::SIGNALLED)
+    return WAIT_RESULT::OBJECT_1;
+
+  if (GetEventState(BreakRead) == STATE::SIGNALLED)
+  {
+    ResetEvent(BreakRead);
+    return WAIT_RESULT::OBJECT_3;
+  }
+
   epoll_event events[2]{};
   int n = epoll_wait(Poll, &events[0], 2, timeout);
   int en = errno;
@@ -459,6 +481,8 @@ WAIT_RESULT Socket::FastWaitForMultipleObjects(int timeout)
 
   WAIT_RESULT result = WAIT_RESULT::TIMEOUT;
 
+  // If both events are signalled we have to return 
+  // socket events
   for (int i = 0; i < n; ++i)
   {
     epoll_event& e = events[i];
@@ -483,7 +507,13 @@ WAIT_RESULT Socket::FastWaitForMultipleObjects(int timeout)
         LogosE("write failed");
       }
     }
-    else if (e.data.fd == Handle)
+  }
+
+  for (int i = 0; i < n; ++i)
+  {
+    epoll_event& e = events[i];
+    
+    if (e.data.fd == Handle)
     {
       if (e.events & EPOLLIN)
         EventsMask |= EVENT_READ;

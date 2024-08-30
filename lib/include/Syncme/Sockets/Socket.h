@@ -134,6 +134,7 @@ namespace Syncme
 
 #if SKTEPOLL
     void EventSignalled(WAIT_RESULT r, uint32_t cookie, bool failed);
+    void ResetEventObject();
 #endif
 
     int WaitRxReady(int timeout);
