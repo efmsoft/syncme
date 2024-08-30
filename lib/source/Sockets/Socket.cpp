@@ -441,7 +441,7 @@ void Socket::EventSignalled(WAIT_RESULT r, uint32_t cookie, bool failed)
 void Socket::ResetEventObject()
 {
   uint64_t value = 0;
-  n = write(EventDescriptor, &value, sizeof(value));
+  int n = write(EventDescriptor, &value, sizeof(value));
   if (n != sizeof(value))
   {
     LogosE("write failed");
