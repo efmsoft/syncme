@@ -18,6 +18,8 @@ using namespace Syncme::ThreadPool;
 static const size_t MAX_UNUSED_THREADS = 12;
 static const size_t MAX_THREADS = 100;
 static const long MAX_IDLE_TIME = 3000; // 3 sec
+static const size_t COMPACT_PERCENT = 80;
+static const size_t COMPACT_STEP = 10;
 
 namespace Syncme::ThreadPool
 {
@@ -94,6 +96,11 @@ OVERFLOW_MODE Pool::GetOverflowMode() const
 void Pool::SetOverflowMode(OVERFLOW_MODE mode)
 {
   Mode = mode;
+}
+
+void Pool::SetCompact(SCompact compact)
+{
+  Compact = compact;
 }
 
 void Pool::SetStopping()
@@ -194,6 +201,31 @@ WorkerPtr Pool::CreateWorker(const TimePoint& t0)
   return t;
 }
 
+void Pool::DoCompact()
+{
+  SCompact compact = Compact;
+  if (compact)
+  {
+    size_t try2free = 0;
+
+    if (true)
+    {
+      LOCK_GUARD();
+
+      size_t inuse = All.size() - Unused.size();
+      size_t limit = (100 * inuse) / MaxThreads;
+      if (limit >= COMPACT_PERCENT)
+      {
+        size_t desired = (COMPACT_PERCENT - COMPACT_STEP) * MaxThreads / 100;
+        try2free = inuse - desired;
+      }
+    }
+
+    if (try2free)
+      compact(try2free);
+  }
+}
+
 HEvent Pool::Run(TCallback cb, uint64_t* pid)
 {
   TimePoint t0;
@@ -203,6 +235,8 @@ HEvent Pool::Run(TCallback cb, uint64_t* pid)
 
   WorkerPtr t;
   EventArray ev(StopEvent, FreeEvent);
+
+  DoCompact();
 
   for (int loop = 0; !Stopping; ++loop)
   {

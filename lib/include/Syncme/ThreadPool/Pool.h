@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <list>
 #include <mutex>
 #include <stdint.h>
@@ -13,6 +14,7 @@ namespace Syncme
   namespace ThreadPool
   {
     typedef std::list<WorkerPtr> WorkerList;
+    typedef std::function<void(size_t)> SCompact;
 
     enum class OVERFLOW_MODE
     {
@@ -26,6 +28,7 @@ namespace Syncme
       size_t MaxThreads;
       long MaxIdleTime;
       OVERFLOW_MODE Mode;
+      SCompact Compact;
 
       HEvent Timer;
       HEvent FreeEvent;
@@ -61,9 +64,13 @@ namespace Syncme
       SINCMELNK OVERFLOW_MODE GetOverflowMode() const;
       SINCMELNK void SetOverflowMode(OVERFLOW_MODE mode);
 
+      SINCMELNK void SetCompact(SCompact compact);
+
     private:
       void CB_OnFree(Worker* p);
       void CB_OnTimer(Worker* p);
+
+      void DoCompact();
 
       void SetStopping();
       WorkerPtr PopUnused(size_t& allCount);
