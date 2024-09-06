@@ -610,15 +610,23 @@ int Socket::WaitRxReady(int timeout)
 
     if (netev & EVENT_CLOSE)
     {
-      Peer.Disconnected = true;
-      Peer.When = GetTimeInMillisec();
+      if (Peer.Disconnected == false)
+      {
+        Peer.Disconnected = true;
+        Peer.When = GetTimeInMillisec();
 
-      int tout = timeout;
-      timeout = 0;
+        int tout = timeout;
+        timeout = 0;
+
+        LogW("%s: peer disconnected. timeout %i -> %i", Pair->WhoAmI(this), tout, timeout);
+      }
       
-      LogW("%s: peer disconnected. timeout %i -> %i", Pair->WhoAmI(this), tout, timeout);
-
       // We have to drain input buffer before closing socket
+      if ((netev & EVENT_READ) == 0)
+      {
+        SKT_SET_LAST_ERROR2(SKT_ERROR::GRACEFUL_DISCONNECT);
+        return 0;
+      }
     }
 
     if (netev & EVENT_READ)
