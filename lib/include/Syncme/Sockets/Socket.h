@@ -76,6 +76,9 @@ namespace Syncme
     uint32_t ExitEventCookie;
     uint32_t CloseEventCookie;
     uint32_t BreakEventCookie;
+    
+    std::mutex EpollLock;
+    bool EpollWait;
 #endif
 
   public:

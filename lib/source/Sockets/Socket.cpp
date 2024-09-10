@@ -38,6 +38,7 @@ Socket::Socket(SocketPair* pair, int handle, bool enableClose)
   , ExitEventCookie(0)
   , CloseEventCookie(0)
   , BreakEventCookie(0)
+  , EpollWait(false)
 #endif
 {
 #if SKTEPOLL
@@ -428,13 +429,18 @@ bool Socket::SwitchToUnblockingMode()
 #if SKTEPOLL
 void Socket::EventSignalled(WAIT_RESULT r, uint32_t cookie, bool failed)
 {
-  // write() will force epoll_wait to exit
-  // we have to write a value > 0
-  uint64_t value = uint64_t(r) + 1;
-  auto s = write(EventDescriptor, &value, sizeof(value));
-  if (s != sizeof(value))
+  std::lock_guard<std::mutex> guard(EpollLock);
+
+  if (EpollWait)
   {
-    LogE("write failed");
+    // write() will force epoll_wait to exit
+    // we have to write a value > 0
+    uint64_t value = uint64_t(r) + 1;
+    auto s = write(EventDescriptor, &value, sizeof(value));
+    if (s != sizeof(value))
+    {
+      LogE("write failed");
+    }
   }
 }
 
@@ -450,23 +456,36 @@ void Socket::ResetEventObject()
 
 WAIT_RESULT Socket::FastWaitForMultipleObjects(int timeout)
 {
-  ResetEventObject();
-
   if (GetEventState(Pair->GetExitEvent()) == STATE::SIGNALLED)
     return WAIT_RESULT::OBJECT_0;
 
   if (GetEventState(Pair->GetCloseEvent()) == STATE::SIGNALLED)
     return WAIT_RESULT::OBJECT_1;
 
-  if (GetEventState(BreakRead) == STATE::SIGNALLED)
+  if (1)
   {
-    ResetEvent(BreakRead);
-    return WAIT_RESULT::OBJECT_3;
+    std::lock_guard<std::mutex> guard(EpollLock);
+
+    if (GetEventState(BreakRead) == STATE::SIGNALLED)
+    {
+      ResetEvent(BreakRead);
+      return WAIT_RESULT::OBJECT_3;
+    }
+
+    EpollWait = true;
+  }
+
+  const int min_timeout = 10;
+  if (timeout < min_timeout)
+  {
+    timeout = min_timeout;
   }
 
   epoll_event events[2]{};
   int n = epoll_wait(Poll, &events[0], 2, timeout);
   int en = errno;
+
+  EpollWait = false;
   
   if (n < 0)
   {
@@ -500,12 +519,7 @@ WAIT_RESULT Socket::FastWaitForMultipleObjects(int timeout)
         result = WAIT_RESULT(value - 1);
       }
 
-      value = 0;
-      n = write(EventDescriptor, &value, sizeof(value));
-      if (n != sizeof(value))
-      {
-        LogosE("write failed");
-      }
+      ResetEventObject();
     }
   }
 
