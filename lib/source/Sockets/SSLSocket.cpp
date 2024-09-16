@@ -196,7 +196,13 @@ int SSLSocket::Read(void* buffer, size_t size, int timeout)
     if (n == 0)
     {
       auto& e = LastError;
-      assert(e == SKT_ERROR::NONE || e == SKT_ERROR::TIMEOUT || e == SKT_ERROR::GRACEFUL_DISCONNECT);
+      assert(
+        e == SKT_ERROR::NONE 
+        || e == SKT_ERROR::TIMEOUT 
+        || e == SKT_ERROR::GRACEFUL_DISCONNECT
+        || e == SKT_ERROR::GENERIC
+      );
+
       return 0;
     }
 
