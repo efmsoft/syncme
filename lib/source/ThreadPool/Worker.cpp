@@ -1,5 +1,4 @@
 #include <cassert>
-#include <windows.h>
 
 #include <Syncme/Logger/Log.h>
 #include <Syncme/ProcessThreadId.h>
