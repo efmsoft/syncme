@@ -29,6 +29,14 @@ namespace Syncme::ThreadPool
   std::atomic<uint64_t> LockedInRun;
   std::atomic<uint64_t> OnTimerCalls;
   std::atomic<uint64_t> Errors;
+
+
+  std::atomic<uint64_t> LockedInRunCreateWorker;
+  std::atomic<uint64_t> LockedInRunStop;
+  std::atomic<uint64_t> LockedInRunFail;
+  std::atomic<uint64_t> LockedInRunInvoke;
+  std::atomic<uint64_t> LockedInRunInvokeError;
+  std::atomic<uint64_t> LockedInCompact;
 }
 
 uint64_t Syncme::ThreadPool::GetThreadsTotal() {return ThreadsTotal;}
@@ -193,6 +201,7 @@ WorkerPtr Pool::CreateWorker(const TimePoint& t0)
   {
     Errors++;
 
+    LockedInRunCreateWorker += t0.ElapsedSince();
     LockedInRun += t0.ElapsedSince();
     return nullptr;
   }
@@ -203,6 +212,8 @@ WorkerPtr Pool::CreateWorker(const TimePoint& t0)
 
 void Pool::DoCompact()
 {
+  TimePoint t0;
+
   SCompact compact = Compact;
   if (compact)
   {
@@ -224,6 +235,8 @@ void Pool::DoCompact()
     if (try2free)
       compact(try2free);
   }
+
+  LockedInCompact += t0.ElapsedSince();
 }
 
 HEvent Pool::Run(TCallback cb, uint64_t* pid)
@@ -251,6 +264,7 @@ HEvent Pool::Run(TCallback cb, uint64_t* pid)
         {
           Errors++;
 
+          LockedInRunFail += t0.ElapsedSince();
           LockedInRun += t0.ElapsedSince();
           return nullptr;
         }
@@ -259,6 +273,7 @@ HEvent Pool::Run(TCallback cb, uint64_t* pid)
         if (rc == WAIT_RESULT::OBJECT_0)
         {
           auto e = t0.ElapsedSince();
+          LockedInRunStop += e;
           LockedInRun += e;
 
           if (e > 200)
@@ -281,6 +296,8 @@ HEvent Pool::Run(TCallback cb, uint64_t* pid)
     break;
   }
 
+  TimePoint t1;
+
   uint64_t id{};
   HEvent h = t->Invoke(cb, id);
   if (h)
@@ -288,6 +305,7 @@ HEvent Pool::Run(TCallback cb, uint64_t* pid)
     if (pid != nullptr)
       *pid = id;
 
+    LockedInRunInvoke += t1.ElapsedSince();
     LockedInRun += t0.ElapsedSince();
     return h;
   }
@@ -295,6 +313,7 @@ HEvent Pool::Run(TCallback cb, uint64_t* pid)
   Push(Unused, t);
   Errors++;
 
+  LockedInRunInvokeError += t0.ElapsedSince();
   LockedInRun += t0.ElapsedSince();
   return nullptr;
 }

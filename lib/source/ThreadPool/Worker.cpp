@@ -1,4 +1,5 @@
 #include <cassert>
+#include <windows.h>
 
 #include <Syncme/Logger/Log.h>
 #include <Syncme/ProcessThreadId.h>
@@ -26,7 +27,7 @@ Worker::Worker(
   , StopEvent(CreateNotificationEvent())
   , IdleEvent(CreateNotificationEvent())
   , BusyEvent(CreateSynchronizationEvent())
-  , InvokeEvent(CreateSynchronizationEvent())
+  , InvokeEvent(CreateNotificationEvent())
   , ExpireTimer(CreateManualResetTimer())
   , ThreadID{}
   , Started(false)
@@ -142,10 +143,12 @@ HEvent Worker::Invoke(TCallback cb, uint64_t& id)
   auto stateExpired = GetEventState(ExpireTimer);
   auto stateBusy = GetEventState(BusyEvent);
   auto stateIdle = GetEventState(IdleEvent);
+  auto stateInvoke = GetEventState(InvokeEvent);
 
   assert(stateExpired == STATE::NOT_SIGNALLED);
   assert(stateBusy == STATE::NOT_SIGNALLED);
   assert(stateIdle == STATE::SIGNALLED);
+  assert(stateInvoke == STATE::NOT_SIGNALLED);
   assert(Thread);
 
   if (!Thread)
@@ -159,15 +162,16 @@ HEvent Worker::Invoke(TCallback cb, uint64_t& id)
 
   Callback = cb;
 
+  // Acquire StateLock to prevent NotifyIdle() called till WaitForMultipleObjects() completion
+  auto guard = StateLock.Lock();
+
   ResetEvent(IdleEvent);
   ResetEvent(BusyEvent);
 
-  // Acquire StateLock to prevent NotifyIdle() called till WaitForMultipleObjects() completion
-  auto guard = StateLock.Lock();
-  
   SetEvent(InvokeEvent);
 
   EventArray object(StopEvent, BusyEvent);
+
   auto rc = WaitForMultipleObjects(object, false, FOREVER);
   assert(rc == WAIT_RESULT::OBJECT_0 || rc == WAIT_RESULT::OBJECT_1);
 
@@ -180,6 +184,7 @@ void Worker::EntryPoint()
   sprintf(name, "TPool:%p", this);
   ThreadID = GetCurrentThreadId();
 
+  SET_CUR_THREAD_NAME(name);
   assert(Exited == false);
 
   EventArray object(StopEvent, InvokeEvent, ManagementTimer);
@@ -187,8 +192,6 @@ void Worker::EntryPoint()
   
   for (;;)
   {
-    SET_CUR_THREAD_NAME(name);
-
     auto rc = WaitForMultipleObjects(object, false, FOREVER);
     if (rc == WAIT_RESULT::OBJECT_0)
       break;
@@ -205,9 +208,10 @@ void Worker::EntryPoint()
       break;
     }
 
+    ResetEvent(InvokeEvent);
     SetEvent(BusyEvent);
     Callback();
-    
+
     // We use IdleEvent to emulate thread handle. Clients can use it to 
     // check that thread is exited. So we return duplicated handle from Handle(),
     // signal event here. We have to create new event to work with new client
@@ -220,6 +224,8 @@ void Worker::EntryPoint()
       LogE("IdleEvent: CreateCommonEvent failed");
       break;
     }
+
+    SET_CUR_THREAD_NAME(name);
 
     auto guard = StateLock.Lock();
     NotifyIdle(this);

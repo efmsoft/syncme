@@ -78,31 +78,31 @@ void Event::OnCloseHandle()
 
 void Event::SetEvent(Event* source)
 {
-  do
+  std::lock_guard<std::mutex> guard(Lock);
+  
+  if (Signalled)
+    return;
+
+  Signalled = true;
+
+  for (auto& w : Waits)
   {
-    std::lock_guard<std::mutex> guard(Lock);
-    Signalled = true;
+    w.second(w.first, Closing);
 
-    for (auto& w : Waits)
+    if (!Notification)
+      Signalled = false;
+  }
+
+  if (Signalled)
+  {
+    auto dlock = DataLock.Lock();
+
+    for (auto& c : CrossRef)
     {
-      w.second(w.first, Closing);
-
-      if (!Notification)
-        Signalled = false;
+      if (c != source)
+        c->SetEvent(source);
     }
-
-    if (Signalled)
-    {
-      auto dlock = DataLock.Lock();
-
-      for (auto& c : CrossRef)
-      {
-        if (c != source)
-          c->SetEvent(source);
-      }
-    }
-
-  } while(false);
+  }
 
   if (Notification)
     Condition.notify_all();
@@ -113,6 +113,10 @@ void Event::SetEvent(Event* source)
 void Event::ResetEvent(Event* source)
 {
   std::lock_guard<std::mutex> guard(Lock);
+
+  if (Signalled == false)
+    return;
+
   Signalled = false;
 
   for (auto& c : CrossRef)
@@ -133,7 +137,12 @@ bool Event::Wait(uint32_t ms)
   auto timeout = ms * 1ms;
 
   std::unique_lock<std::mutex> guard(Lock);
-  bool f = Condition.wait_for(guard, timeout, [this] {return Signalled == true;});
+  
+  bool f = true;
+  if (Signalled == false)
+  {
+    f = Condition.wait_for(guard, timeout, [this] {return Signalled == true;});
+  }
 
   if (f && !Notification)
     Signalled = false;
