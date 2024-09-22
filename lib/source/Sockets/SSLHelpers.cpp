@@ -330,6 +330,7 @@ std::string Syncme::SslError(int code)
 std::string Syncme::GetBioError()
 {
 #ifdef _WIN32
+  int en = errno;
   int e = GetLastError();
 #endif  
 
@@ -343,7 +344,13 @@ std::string Syncme::GetBioError()
 
 #if defined(USE_LOGME) && defined(_WIN32)
   if (errorString.empty())
+  {
+    
     errorString = LRESULT_STR(e);
+    errorString += " (errno: ";
+    errorString += ERRNO_STR(en);
+    errorString += ")";
+  }
 #endif    
 
   while (!errorString.empty())
