@@ -106,6 +106,18 @@ bool SocketEvent::Wait(uint32_t ms)
 
 uint32_t SocketEvent::RegisterWait(TWaitComplete complete)
 {
+#ifdef _WIN32
+  if (EventMask & EVENT_READ)
+  {
+    unsigned long n = -1;
+    if (ioctlsocket(Socket, FIONREAD, &n) > 0)
+    {
+      Events |= EVENT_READ;
+      SetEvent(this);
+    }
+  }
+#endif
+
   WaitManager::AddSocketEvent(this);
   return Event::RegisterWait(complete);
 }
