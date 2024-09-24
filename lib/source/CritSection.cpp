@@ -28,6 +28,15 @@ CS::AutoLock::~AutoLock()
     Section->Release();
 }
 
+void CS::AutoLock::Release()
+{
+  CS* s = nullptr;
+  std::swap(s, Section);
+
+  if (s)
+    s->Release();
+}
+
 CS::CS()
 #if CS_USE_CRITICAL_SECTION
   : SectionData{}

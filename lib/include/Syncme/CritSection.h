@@ -37,6 +37,8 @@ namespace Syncme
       SINCMELNK AutoLock(AutoLock&& src) noexcept;
       SINCMELNK ~AutoLock();
 
+      SINCMELNK void Release();
+
     private:
       AutoLock() = delete;
       AutoLock(const AutoLock&) = delete;
