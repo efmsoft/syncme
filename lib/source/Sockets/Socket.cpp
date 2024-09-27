@@ -577,8 +577,6 @@ int Socket::WaitRxReady(int timeout)
 
     if (rc == WAIT_RESULT::OBJECT_0 || rc == WAIT_RESULT::OBJECT_1)
     {
-      ResetEvent(BreakRead);
-
       SKT_SET_LAST_ERROR(CONNECTION_ABORTED);
       return -1;
     }
@@ -597,8 +595,6 @@ int Socket::WaitRxReady(int timeout)
       t = GetTimeInMillisec();
       if (t - start >= timeout)
       {
-        ResetEvent(BreakRead);
-
         SKT_SET_LAST_ERROR2(Peer.Disconnected ? SKT_ERROR::GRACEFUL_DISCONNECT : SKT_ERROR::TIMEOUT);
         return 0;
       }
@@ -608,8 +604,6 @@ int Socket::WaitRxReady(int timeout)
 
     if (rc == WAIT_RESULT::FAILED)
     {
-      ResetEvent(BreakRead);
-
       SKT_SET_LAST_ERROR(CONNECTION_ABORTED);
       return -1;
     }
@@ -637,8 +631,6 @@ int Socket::WaitRxReady(int timeout)
       // We have to drain input buffer before closing socket
       if ((netev & EVENT_READ) == 0)
       {
-        ResetEvent(BreakRead);
-
         SKT_SET_LAST_ERROR2(SKT_ERROR::GRACEFUL_DISCONNECT);
         return 0;
       }
@@ -648,7 +640,6 @@ int Socket::WaitRxReady(int timeout)
       break;
   }
 
-  ResetEvent(BreakRead);
   SKT_SET_LAST_ERROR(NONE);
   return 1;
 }
