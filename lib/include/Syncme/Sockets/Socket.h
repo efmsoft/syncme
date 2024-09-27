@@ -55,6 +55,7 @@ namespace Syncme
     bool Configured;
     bool CloseNotify;
     bool BlockingMode;
+    bool AcceptWouldblock;
 
     std::string AcceptIP;
     int AcceptPort;

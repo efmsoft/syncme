@@ -133,11 +133,11 @@ void SSLSocket::Shutdown()
   }
 }
 
-int SSLSocket::ReadPending(void* buffer, size_t size)
+int SSLSocket::ReadPending(void* buffer, size_t size, int i)
 {
   std::lock_guard<std::mutex> guard(SslLock);
 
-  if (!SSL_has_pending(Ssl))
+  if (i && !SSL_has_pending(Ssl))
     return 0;
   
   int n = SSL_read(Ssl, buffer, int(size));
@@ -168,9 +168,10 @@ int SSLSocket::Read(void* buffer, size_t size, int timeout)
   if (n)
     return n;
 
-  for (auto start = GetTimeInMillisec();;)
+  int i = 0;
+  for (auto start = GetTimeInMillisec();; ++i)
   {
-    n = ReadPending(buffer, size);
+    n = ReadPending(buffer, size, i);
     if (n != 0)                             // If error or we read some data
       return n;
 

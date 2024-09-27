@@ -32,7 +32,7 @@ namespace Syncme
     SINCMELNK operator SKT_ERROR () const;
 
     SINCMELNK static std::string ToString(SKT_ERROR c);
-    SINCMELNK std::string Format() const;
+    SINCMELNK std::string Format(bool module = true) const;
   };
 
   #define SET_SOCKET_ERROR(e, c) \

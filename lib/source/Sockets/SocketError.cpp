@@ -47,10 +47,13 @@ std::string SocketError::ToString(SKT_ERROR c)
   return std::string();
 }
 
-std::string SocketError::Format() const
+std::string SocketError::Format(bool module) const
 {
   std::string str(ToString(Code));
 
+  if (module == false)
+    return str;
+  
 #ifdef _WIN32
   const char* p = strrchr(File, '\\');
 #else

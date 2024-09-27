@@ -80,9 +80,6 @@ void Event::SetEvent(Event* source)
 {
   std::lock_guard<std::mutex> guard(Lock);
   
-  if (Signalled)
-    return;
-
   Signalled = true;
 
   for (auto& w : Waits)
@@ -113,9 +110,6 @@ void Event::SetEvent(Event* source)
 void Event::ResetEvent(Event* source)
 {
   std::lock_guard<std::mutex> guard(Lock);
-
-  if (Signalled == false)
-    return;
 
   Signalled = false;
 
