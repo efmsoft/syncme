@@ -430,8 +430,6 @@ bool Socket::SwitchToUnblockingMode()
 #if SKTEPOLL
 void Socket::EventSignalled(WAIT_RESULT r, uint32_t cookie, bool failed)
 {
-  std::lock_guard<std::mutex> guard(EpollLock);
-
   if (EpollWait)
   {
     // write() will force epoll_wait to exit
@@ -463,18 +461,10 @@ WAIT_RESULT Socket::FastWaitForMultipleObjects(int timeout)
   if (GetEventState(Pair->GetCloseEvent()) == STATE::SIGNALLED)
     return WAIT_RESULT::OBJECT_1;
 
-  if (1)
-  {
-    std::lock_guard<std::mutex> guard(EpollLock);
+  if (GetEventState(BreakRead) == STATE::SIGNALLED)
+    return WAIT_RESULT::OBJECT_3;
 
-    if (GetEventState(BreakRead) == STATE::SIGNALLED)
-    {
-      ResetEvent(BreakRead);
-      return WAIT_RESULT::OBJECT_3;
-    }
-
-    EpollWait = true;
-  }
+  EpollWait = true;
 
   const int min_timeout = 10;
   if (timeout < min_timeout)
