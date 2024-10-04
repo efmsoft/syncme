@@ -86,4 +86,89 @@ WAIT_RESULT Socket::FastWaitForMultipleObjects(int timeout)
 
   return result;
 }
+
+bool Socket::IO(int timeout, IOStat& stat, IOFlags flags)
+{
+  std::lock_guard<std::mutex> guard(IOLock);
+
+  if (RxEvent == nullptr)
+    return false;
+
+  auto start = GetTimeInMillisec();
+  memset(&stat, 0, sizeof(stat));
+
+  for (bool expired = false;;)
+  {
+    // If peer is disconnected, write will fail
+    // We socked still can contain data to read
+    if (Peer.Disconnected == false)
+    {
+      // Try to write as much as possible
+      if (WriteIO(stat) == false)
+        return false;
+    }
+
+    // Read as much as possible. 
+    if (ReadIO(stat) == false)
+      return false;
+
+    // If peer is disconnected, we already drained socket
+    if (Peer.Disconnected)
+    {
+      // If there are data to process, we have to return success
+      return RxQueue.IsEmpty() == false;
+    }
+
+    // Return immediatelly if we read at least one packet
+    if (RxQueue.IsEmpty() == false)
+      return true;
+
+    if (flags.f.Flush && TxQueue.IsEmpty())
+      return true;
+
+    uint32_t ms = CalculateTimeout(timeout, start, expired);
+    if (expired)
+      break;
+
+    TimePoint t0;
+    auto rc = FastWaitForMultipleObjects(timeout);
+    stat.WaitTime += t0.ElapsedSince();
+    stat.Wait++;
+
+    if (rc == WAIT_RESULT::WAIT_TIMEOUT)
+      break;
+
+    // WExitEvent or WStopEvent
+    if (rc == WAIT_RESULT::WAIT_OBJECT_0 || rc == WAIT_RESULT::WAIT_OBJECT_1)
+      return false;
+
+    // WStopIO
+    if (rc == WAIT_RESULT::WAIT_OBJECT_3)
+      break;
+
+    // WStartTX
+    if (rc == WAIT_RESULT::WAIT_OBJECT_4)
+      continue;
+
+    int events = EventsMask;
+    EventsMask = 0;
+
+    if (events & FD_CLOSE)
+    {
+      // On next cycle after attempt to read from the 
+      // socket we will break the loop
+
+      Peer.Disconnected = true;
+      Peer.When = GetTimeInMillisec();
+
+      LogW("peer disconnected");
+    }
+
+    // Other flags are not interesting for us
+    // we will try both write and read in all cases
+  }
+
+  return true;
+}
+
 #endif
