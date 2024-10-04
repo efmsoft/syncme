@@ -78,11 +78,11 @@ bool Socket::WriteIO(IOStat& stat)
 bool Socket::ReadIO(IOStat& stat)
 {
   TimePoint t0;
-  char buffer[64 * 1024] = { 0 };
+  char* buffer = (char*)alloca(Sockets::IO::BUFFER_SIZE);
 
   for (;;)
   {
-    int n = InternalRead(buffer, sizeof(buffer), 0);
+    int n = InternalRead(buffer, Sockets::IO::BUFFER_SIZE, 0);
     if (n > 0)
     {
       stat.Rcv += n;

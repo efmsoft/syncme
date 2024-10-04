@@ -78,9 +78,13 @@ WAIT_RESULT Socket::FastWaitForMultipleObjects(int timeout)
         LogosE("read failed");
       }
       else
+      {
         result = WAIT_RESULT(value - 1);
-
-      ResetEventObject();
+        if (result != WAIT_RESULT::OBJECT_0 && result != WAIT_RESULT::OBJECT_1)
+        {
+          ResetEventObject();
+        }
+      }
     }
     else if (e.data.fd == Handle)
     {
@@ -155,13 +159,19 @@ bool Socket::IO(int timeout, IOStat& stat, IOFlags flags)
     if (rc == WAIT_RESULT::OBJECT_0 || rc == WAIT_RESULT::OBJECT_1)
       return false;
 
-    // WStopIO
+    // BreakRead
     if (rc == WAIT_RESULT::OBJECT_3)
+    {
+      ResetEvent(BreakRead);
       break;
+    }
 
-    // WStartTX
+    // StartTX
     if (rc == WAIT_RESULT::OBJECT_4)
+    {
+      ResetEvent(StartTX);
       continue;
+    }
 
     int events = EventsMask;
     EventsMask = 0;
