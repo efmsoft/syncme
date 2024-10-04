@@ -191,8 +191,10 @@ void Queue::RemoveFirst()
     b = Packets.front();
     Total -= b->size();
 
+#if defined(_WIN32) && defined(_DEBUG)
     if (int64_t(Total) < 0)
       DebugBreak();
+#endif
 
     Packets.pop_front();
   }
