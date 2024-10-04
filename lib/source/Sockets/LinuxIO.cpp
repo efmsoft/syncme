@@ -1,7 +1,17 @@
 #include <Syncme/Logger/Log.h>
 #include <Syncme/Sockets/Socket.h>
+#include <Syncme/Sockets/SocketPair.h>
+#include <Syncme/TickCount.h>
+
+using namespace Syncme;
 
 #if SKTEPOLL
+
+#include <fcntl.h>
+#include <sys/epoll.h>
+#include <sys/eventfd.h>
+
+
 void Socket::EventSignalled(WAIT_RESULT r, uint32_t cookie, bool failed)
 {
   // write() will force epoll_wait to exit
@@ -71,7 +81,7 @@ WAIT_RESULT Socket::FastWaitForMultipleObjects(int timeout)
         result = WAIT_RESULT(value - 1);
 
       ResetEventObject();
-    }    
+    }
     else if (e.data.fd == Handle)
     {
       if (e.events & EPOLLIN)
@@ -79,7 +89,7 @@ WAIT_RESULT Socket::FastWaitForMultipleObjects(int timeout)
 
       if (e.events & EPOLLOUT)
         EventsMask |= EVENT_WRITE;
-      
+
       if (e.events & EPOLLRDHUP)
         EventsMask |= EVENT_CLOSE;
 
@@ -138,25 +148,25 @@ bool Socket::IO(int timeout, IOStat& stat, IOFlags flags)
     stat.WaitTime += t0.ElapsedSince();
     stat.Wait++;
 
-    if (rc == WAIT_RESULT::WAIT_TIMEOUT)
+    if (rc == WAIT_RESULT::TIMEOUT)
       break;
 
     // WExitEvent or WStopEvent
-    if (rc == WAIT_RESULT::WAIT_OBJECT_0 || rc == WAIT_RESULT::WAIT_OBJECT_1)
+    if (rc == WAIT_RESULT::OBJECT_0 || rc == WAIT_RESULT::OBJECT_1)
       return false;
 
     // WStopIO
-    if (rc == WAIT_RESULT::WAIT_OBJECT_3)
+    if (rc == WAIT_RESULT::OBJECT_3)
       break;
 
     // WStartTX
-    if (rc == WAIT_RESULT::WAIT_OBJECT_4)
+    if (rc == WAIT_RESULT::OBJECT_4)
       continue;
 
     int events = EventsMask;
     EventsMask = 0;
 
-    if (events & FD_CLOSE)
+    if (events & EVENT_CLOSE)
     {
       // On next cycle after attempt to read from the 
       // socket we will break the loop
