@@ -47,6 +47,8 @@ namespace Syncme
 
 #ifndef _WIN32
       SINCMELNK epoll_event GetPollEvent() const;
+#else
+      SINCMELNK void* GetWSAEvent() const;
 #endif
       
     private:

@@ -32,17 +32,38 @@ Socket::Socket(SocketPair* pair, int handle, bool enableClose)
   , AcceptWouldblock(false)
   , AcceptPort(0)
   , Pid(-1)
+  , RxQueue(-1)
+  , TxQueue(-1)
+#ifdef _WIN32
+  , WExitEvent(nullptr)
+  , WStopEvent(nullptr)
+  , WStopIO(nullptr)
+  , WStartTX(nullptr)
+#endif
+  , ExitEventCookie(0)
+  , CloseEventCookie(0)
+  , BreakEventCookie(0)
+  , StartTXEventCookie(0)
 #if SKTEPOLL
   , Poll(-1)
   , EventDescriptor(-1)
   , EventsMask(0)
-  , ExitEventCookie(0)
-  , CloseEventCookie(0)
-  , BreakEventCookie(0)
-  , EpollWait(false)
 #endif
 {
+  StartTX = CreateSynchronizationEvent();
+
+#ifdef _WIN32
+  InitWin32Events();
+  TxQueue.SetSignallReady(
+    std::bind(&Socket::SignallWindowsEvent, this, WStartTX, 0, false)
+  );
+#endif
+
 #if SKTEPOLL
+  StartTXEventCookie = StartTX->RegisterWait(
+    std::bind(&Socket::EventSignalled, this, WAIT_RESULT::OBJECT_4, _1, _2)
+  );
+
   Poll = epoll_create(1);
   if (Poll == -1)
   {
@@ -75,12 +96,29 @@ Socket::~Socket()
 
   CloseHandle(RxEvent);
 
-#if SKTEPOLL
-  if (BreakRead)
+#if SKTEPOLL || defined(_WIN32)
+  if (BreakRead && BreakEventCookie)
+  {
     BreakRead->UnregisterWait(BreakEventCookie);
+    BreakEventCookie = 0;
+  }
 #endif
 
   CloseHandle(BreakRead);
+
+#ifdef _WIN32
+  FreeWin32Events();
+#endif
+
+#if SKTEPOLL
+  if (StartTXEventCookie)
+  {
+    StartTX->UnregisterWait(StartTXEventCookie);
+    StartTXEventCookie = 0;
+  }
+#endif
+
+  CloseHandle(StartTX);
 
 #if SKTEPOLL
   if (EventDescriptor != -1)
@@ -155,6 +193,14 @@ int Socket::Detach(bool* enableClose)
   }
 #endif
 
+#ifdef _WIN32
+  if (CloseEventCookie)
+  {
+    Pair->GetCloseEvent()->UnregisterWait(CloseEventCookie);
+    CloseEventCookie = 0;
+  }
+#endif
+
   int h = Handle;
   Handle = -1;
 
@@ -176,7 +222,9 @@ bool Socket::PeerDisconnected() const
 
 bool Socket::ReadPeerDisconnected()
 {
-  WaitRxReady(0);
+  IOStat stat{};
+  IO(0, stat);
+
   return PeerDisconnected();
 }
 
@@ -201,7 +249,7 @@ bool Socket::Attach(int socket, bool enableClose)
 
   epoll_event ev{};
   ev.data.fd = Handle;
-  ev.events = EPOLLIN | EPOLLRDHUP;
+  ev.events = EPOLLIN | EPOLLOUT | EPOLLRDHUP;
 
   if (epoll_ctl(Poll, EPOLL_CTL_ADD, Handle, &ev) == -1)
   {
@@ -214,6 +262,8 @@ bool Socket::Attach(int socket, bool enableClose)
 
 void Socket::Close()
 {
+  Flush();
+
   bool callClose = false;
   int socket = Detach(&callClose);
 
@@ -346,8 +396,12 @@ bool Socket::SwitchToBlockingMode()
 
   if (BreakRead)
   {
-#if SKTEPOLL
-    BreakRead->UnregisterWait(BreakEventCookie);
+#if SKTEPOLL || defined(_WIN32)
+    if (BreakEventCookie)
+    {
+      BreakRead->UnregisterWait(BreakEventCookie);
+      BreakEventCookie = 0;
+    }
 #endif
     CloseHandle(BreakRead);
   }
@@ -400,12 +454,16 @@ bool Socket::SwitchToUnblockingMode()
     BreakEventCookie = BreakRead->RegisterWait(
       std::bind(&Socket::EventSignalled, this, WAIT_RESULT::OBJECT_3, _1, _2)
     );
+#else if defined(_WIN32)
+    BreakEventCookie = BreakRead->RegisterWait(
+      std::bind(&Socket::SignallWindowsEvent, this, WStopIO, _1, _2)
+    );
 #endif
   }
 
   if (RxEvent == nullptr)
   {
-    RxEvent = CreateSocketEvent(Handle, EVENT_READ | EVENT_CLOSE);
+    RxEvent = CreateSocketEvent(Handle, EVENT_READ | EVENT_WRITE | EVENT_CLOSE);
     if (RxEvent == nullptr)
     {
       LogE("CreateSocketEvent failed");
@@ -425,314 +483,6 @@ bool Socket::SwitchToUnblockingMode()
 
   BlockingMode = false;
   return true;
-}
-
-#if SKTEPOLL
-void Socket::EventSignalled(WAIT_RESULT r, uint32_t cookie, bool failed)
-{
-  if (EpollWait)
-  {
-    // write() will force epoll_wait to exit
-    // we have to write a value > 0
-    uint64_t value = uint64_t(r) + 1;
-    auto s = write(EventDescriptor, &value, sizeof(value));
-    if (s != sizeof(value))
-    {
-      LogE("write failed");
-    }
-  }
-}
-
-void Socket::ResetEventObject()
-{
-  uint64_t value = 0;
-  int n = write(EventDescriptor, &value, sizeof(value));
-  if (n != sizeof(value))
-  {
-    LogosE("write failed");
-  }
-}
-
-WAIT_RESULT Socket::FastWaitForMultipleObjects(int timeout)
-{
-  if (GetEventState(Pair->GetExitEvent()) == STATE::SIGNALLED)
-    return WAIT_RESULT::OBJECT_0;
-
-  if (GetEventState(Pair->GetCloseEvent()) == STATE::SIGNALLED)
-    return WAIT_RESULT::OBJECT_1;
-
-  if (GetEventState(BreakRead) == STATE::SIGNALLED)
-    return WAIT_RESULT::OBJECT_3;
-
-  EpollWait = true;
-
-  const int min_timeout = 10;
-  if (timeout < min_timeout)
-  {
-    timeout = min_timeout;
-  }
-
-  epoll_event events[2]{};
-  int n = epoll_wait(Poll, &events[0], 2, timeout);
-  int en = errno;
-
-  EpollWait = false;
-  
-  if (n < 0)
-  {
-    if (en != EINTR)
-    {
-      LogE("epoll_wait failed. Error %i", en);
-      return WAIT_RESULT::FAILED;
-    }
-
-    n = 0;
-  }
-
-  WAIT_RESULT result = WAIT_RESULT::TIMEOUT;
-
-  // If both events are signalled we have to return 
-  // socket events
-  for (int i = 0; i < n; ++i)
-  {
-    epoll_event& e = events[i];
-
-    if (e.data.fd == EventDescriptor)
-    {
-      uint64_t value = 0;
-      auto n = read(EventDescriptor, &value, sizeof(value));
-      if (n != sizeof(value))
-      {
-        LogosE("read failed");
-      }
-      else
-      {
-        result = WAIT_RESULT(value - 1);
-      }
-
-      ResetEventObject();
-    }
-  }
-
-  for (int i = 0; i < n; ++i)
-  {
-    epoll_event& e = events[i];
-    
-    if (e.data.fd == Handle)
-    {
-      if (e.events & EPOLLIN)
-        EventsMask |= EVENT_READ;
-
-      if (e.events & EPOLLRDHUP)
-        EventsMask |= EVENT_CLOSE;
-
-      result = WAIT_RESULT::OBJECT_2;
-    }
-  }
-
-  return result;
-}
-#endif
-
-int Socket::WaitRxReady(int timeout)
-{
-  assert(RxEvent);
-
-  const int LITTLE_WAIT = 10;
-  if (Peer.Disconnected)
-    timeout = LITTLE_WAIT;
-
-  auto start = GetTimeInMillisec();
-  
-#if SKTEPOLL == 0
-  EventArray events(
-    Pair->GetExitEvent()
-    , Pair->GetCloseEvent()
-    , RxEvent
-    , BreakRead
-  );
-#endif
-
-  for (int loops = 0;; ++loops)
-  {
-    auto t = GetTimeInMillisec();
-    uint32_t milliseconds = FOREVER;
-
-    if (timeout != FOREVER)
-    {
-      if (t - start >= timeout)
-      {
-        SKT_SET_LAST_ERROR2(Peer.Disconnected ? SKT_ERROR::GRACEFUL_DISCONNECT : SKT_ERROR::TIMEOUT);
-        return 0;
-      }
-
-      milliseconds = uint32_t(start + timeout - t);
-    }
-
-#if SKTEPOLL
-    auto rc = FastWaitForMultipleObjects(milliseconds);
-#else
-    auto rc = WaitForMultipleObjects(events, false, milliseconds);
-#endif
-
-    if (rc == WAIT_RESULT::OBJECT_0 || rc == WAIT_RESULT::OBJECT_1)
-    {
-      SKT_SET_LAST_ERROR(CONNECTION_ABORTED);
-      return -1;
-    }
-
-    if (rc == WAIT_RESULT::OBJECT_3)
-    {
-      ResetEvent(BreakRead);
-      LogI("Break read");
-
-      SKT_SET_LAST_ERROR(NONE);
-      return 0;
-    }
-
-    if (rc == WAIT_RESULT::TIMEOUT)
-    {
-      t = GetTimeInMillisec();
-      if (t - start >= timeout)
-      {
-        SKT_SET_LAST_ERROR2(Peer.Disconnected ? SKT_ERROR::GRACEFUL_DISCONNECT : SKT_ERROR::TIMEOUT);
-        return 0;
-      }
-
-      continue;
-    }
-
-    if (rc == WAIT_RESULT::FAILED)
-    {
-      SKT_SET_LAST_ERROR(CONNECTION_ABORTED);
-      return -1;
-    }
-
-#if SKTEPOLL
-    int netev = EventsMask;
-    EventsMask = 0;
-#else
-    int netev = GetSocketEvents(RxEvent);
-#endif
-
-    if (netev & EVENT_CLOSE)
-    {
-      if (Peer.Disconnected == false)
-      {
-        Peer.Disconnected = true;
-        Peer.When = GetTimeInMillisec();
-
-        int tout = timeout;
-        timeout = 0;
-
-        LogW("%s: peer disconnected. timeout %i -> %i", Pair->WhoAmI(this), tout, timeout);
-      }
-      
-      // We have to drain input buffer before closing socket
-      if ((netev & EVENT_READ) == 0)
-      {
-        SKT_SET_LAST_ERROR2(SKT_ERROR::GRACEFUL_DISCONNECT);
-        return 0;
-      }
-    }
-
-    if (netev & EVENT_READ)
-      break;
-  }
-
-  SKT_SET_LAST_ERROR(NONE);
-  return 1;
-}
-
-bool Socket::StopPendingRead()
-{
-  return SetEvent(BreakRead);
-}
-
-int Socket::Read(std::vector<char>& buffer, int timeout)
-{
-  return Read(&buffer[0], buffer.size(), timeout);
-}
-
-int Socket::WriteStr(const std::string& str, int timeout)
-{
-  return Write(str.c_str(), str.length(), timeout);
-}
-
-int Socket::Write(const std::vector<char>& arr, int timeout)
-{
-  return Write(&arr[0], arr.size(), timeout);
-}
-
-int Socket::Write(const void* buffer, size_t size, int timeout)
-{
-  assert(size > 0);
-
-  int n = 0;
-  EventArray events(Pair->GetExitEvent(), Pair->GetCloseEvent());
-
-  for (auto start = GetTimeInMillisec();;)
-  {
-    n = InternalWrite(buffer, size, timeout);
-    if (n > 0)
-      break;
-
-    SKT_ERROR e = Ossl2SktError(n);
-    if (e != SKT_ERROR::WOULDBLOCK)
-    {
-      SKT_SET_LAST_ERROR2(e);
-      return n;
-    }
-
-    if (e == SKT_ERROR::WOULDBLOCK && AcceptWouldblock)
-    {
-      assert(n == 0);
-
-      SKT_SET_LAST_ERROR2(e);
-      return 0;
-    }
-
-    auto rc = WaitForMultipleObjects(events, false, 10);
-    if (rc == WAIT_RESULT::OBJECT_0 || rc == WAIT_RESULT::OBJECT_1)
-    {
-      SKT_SET_LAST_ERROR(CONNECTION_ABORTED);
-      return -1;
-    }
-
-    if (timeout != FOREVER)
-    {
-      auto t = GetTimeInMillisec() - start;
-      if (t > timeout)
-      {
-        SKT_SET_LAST_ERROR(TIMEOUT);
-        return 0;
-      }
-    }
-  }
-  
-  SKT_SET_LAST_ERROR(NONE);
-  return n;
-}
-
-void Socket::Unread(const char* p, size_t n)
-{
-  PacketPtr packet = std::make_shared<Packet>(n);
-  memcpy(&(*packet.get())[0], p, n);
-  Packets.push_back(packet);
-}
-
-int Socket::ReadPacket(void* buffer, size_t size)
-{
-  if (Packets.empty())
-    return 0;
-  
-  SKT_SET_LAST_ERROR(NONE);
-
-  PacketPtr p = Packets.front();
-  Packets.pop_front();
-
-  memcpy(buffer, &(*p.get())[0], int(p->size()));
-  return int(p->size());
 }
 
 bool Socket::InitAcceptAddress()
@@ -894,30 +644,4 @@ bool Socket::PeerFromHostString(
 
   freeaddrinfo(servinfo);
   return true;
-}
-
-void Socket::AddLimit(int code, size_t count, uint64_t duration)
-{
-  auto guard = Lock.Lock();
-
-  auto it = Limits.find(code);
-  if (it != Limits.end())
-  {
-    it->second->SetLimit(count, duration);
-    return;
-  }
-
-  ErrorLimitPtr ptr = std::make_shared<ErrorLimit>(count, duration);
-  Limits[code] = ptr;
-}
-
-bool Socket::ReportError(int code)
-{
-  auto guard = Lock.Lock();
-
-  auto it = Limits.find(code);
-  if (it == Limits.end())
-    return false;
-
-  return it->second->ReportError();
 }

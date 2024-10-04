@@ -245,3 +245,10 @@ void SocketEvent::FireEvents(int events)
 
   SetEvent(this);
 }
+
+#ifdef _WIN32
+void* SocketEvent::GetWSAEvent() const
+{
+  return WSAEvent;
+}
+#endif

@@ -86,12 +86,14 @@ void SocketPair::Close()
   if (Client)
   {
     LogI("Shutting down client");
+    Client->Flush();
     Client->Shutdown();
   }
 
   if (Server)
   {
     LogI("Shutting down server");
+    Server->Flush();
     Server->Shutdown();
   }
 

@@ -17,7 +17,6 @@ namespace Syncme
     SINCMELNK BIOSocket(SocketPair* pair);
     SINCMELNK ~BIOSocket();
 
-    SINCMELNK int Read(void* buffer, size_t size, int timeout) override;
     SINCMELNK void Shutdown() override;
 
     SINCMELNK virtual SKT_ERROR Ossl2SktError(int ret) const override;

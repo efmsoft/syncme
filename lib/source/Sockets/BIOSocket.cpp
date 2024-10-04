@@ -78,55 +78,6 @@ int BIOSocket::InternalRead(void* buffer, size_t size, int timeout)
   return n;
 }
 
-int BIOSocket::Read(void* buffer, size_t size, int timeout)
-{
-  SKT_SET_LAST_ERROR(NONE);
-
-  int n = ReadPacket(buffer, size);
-  if (n)
-    return n;
-
-  for (auto start = GetTimeInMillisec();;)
-  {
-    uint32_t ms = FOREVER;
-    if (timeout != FOREVER)
-    {
-      auto t = GetTimeInMillisec();
-
-      if (t - start > timeout)
-      {
-        SKT_SET_LAST_ERROR(TIMEOUT);
-        return 0;
-      }
-
-      ms = uint32_t(start + timeout - t);
-    }
-
-    n = WaitRxReady(ms);
-    if (n < 0)
-      return n;
-
-    if (n == 0)
-    {
-      auto& e = LastError;
-      assert(e == SKT_ERROR::NONE || e == SKT_ERROR::TIMEOUT || e == SKT_ERROR::GRACEFUL_DISCONNECT);
-      return 0;
-    }
-
-    n = InternalRead(buffer, size, ms);
-    if (n != 0)
-      break;
-
-    if (Peer.Disconnected)
-    {
-      SKT_SET_LAST_ERROR(GRACEFUL_DISCONNECT);
-      break;
-    }
-  }
-
-  return n;
-}
-
 int BIOSocket::InternalWrite(const void* buffer, size_t size, int timeout)
 {
   std::lock_guard<std::mutex> guard(BioLock);

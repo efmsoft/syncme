@@ -11,13 +11,10 @@
 #include <Syncme/Logger/Channel.h>
 #include <Syncme/Sockets/ErrorLimit.h>
 #include <Syncme/Sockets/SocketError.h>
+#include <Syncme/Sockets/Queue.h>
 #include <Syncme/Sync.h>
 
-// Set SKT_EPOLL to 1 if we should use an alternative 
-// method of wait in WaitRxEvent on Linux
-#define SKT_EPOLL 1
-
-#if !defined(_WIN32) && SKT_EPOLL
+#if !defined(_WIN32)
 #define SKTEPOLL 1
 #else
 #define SKTEPOLL 0
@@ -40,6 +37,30 @@ namespace Syncme
     }
   };
 
+  struct IOStat
+  {
+    size_t Sent;
+    size_t SentPkt;
+    uint64_t SendTime;
+
+    size_t Rcv;
+    size_t RcvPkt;
+    uint32_t RcvTime;
+
+    size_t Wait;
+    uint32_t WaitTime;
+  };
+
+  union IOFlags
+  {
+    uint32_t All;
+    struct
+    {
+      uint32_t Flush : 1;
+      uint32_t : 31;
+    } f;
+  };
+
   struct Socket
   {
     SocketPair* Pair;
@@ -50,6 +71,7 @@ namespace Syncme
     bool EnableClose;
     HEvent RxEvent;
     HEvent BreakRead;
+    HEvent StartTX;
 
     ConnectedPeer Peer;
     bool Configured;
@@ -61,7 +83,6 @@ namespace Syncme
     int AcceptPort;
 
     SocketError LastError;
-    std::map<int, ErrorLimitPtr> Limits;
 
     typedef std::vector<char> Packet;
     typedef std::shared_ptr<Packet> PacketPtr;
@@ -70,15 +91,26 @@ namespace Syncme
 
     int Pid;
 
+    Sockets::IO::Queue RxQueue;
+    Sockets::IO::Queue TxQueue;
+    std::mutex IOLock;
+
+#ifdef _WIN32
+    void* WExitEvent;
+    void* WStopEvent;
+    void* WStopIO;
+    void* WStartTX;
+#endif
+
+    uint32_t ExitEventCookie;
+    uint32_t CloseEventCookie;
+    uint32_t BreakEventCookie;
+    uint32_t StartTXEventCookie;
+
 #if SKTEPOLL
     int Poll;
     int EventDescriptor;
     int EventsMask;
-    uint32_t ExitEventCookie;
-    uint32_t CloseEventCookie;
-    uint32_t BreakEventCookie;
-    
-    bool EpollWait;
 #endif
 
   public:
@@ -98,7 +130,7 @@ namespace Syncme
     SINCMELNK bool ReadPeerDisconnected();
 
     SINCMELNK int Read(std::vector<char>& buffer, int timeout = FOREVER);
-    SINCMELNK virtual int Read(void* buffer, size_t size, int timeout = FOREVER) = 0;
+    SINCMELNK int Read(void* buffer, size_t size, int timeout = FOREVER);
 
     SINCMELNK int WriteStr(const std::string& str, int timeout = FOREVER);
     SINCMELNK int Write(const std::vector<char>& arr, int timeout = FOREVER);
@@ -117,9 +149,6 @@ namespace Syncme
       , int type
     );
 
-    SINCMELNK void AddLimit(int code, size_t count, uint64_t duration);
-    SINCMELNK bool ReportError(int code);
-
     SINCMELNK void SetLastError(SKT_ERROR e, const char* file, int line);
     SINCMELNK const SocketError& GetLastError() const;
 
@@ -133,15 +162,27 @@ namespace Syncme
     SINCMELNK WAIT_RESULT FastWaitForMultipleObjects(int timeout);
 #endif
 
+    SINCMELNK virtual bool IO(int timeout, IOStat& stat, IOFlags flags = IOFlags{});
+    SINCMELNK virtual bool Flush(int timeout = -1);
+
   protected:
+    bool ReadIO(IOStat& stat);
+    bool WriteIO(IOStat& stat);
 
 #if SKTEPOLL
     void EventSignalled(WAIT_RESULT r, uint32_t cookie, bool failed);
-    void ResetEventObject();
+    void ResetEventObject(); 
 #endif
 
-    int WaitRxReady(int timeout);
+#ifdef _WIN32
+    void InitWin32Events();
+    void FreeWin32Events();
+    void SignallWindowsEvent(void* h, uint32_t cookie, bool failed);
+#endif
+
     int ReadPacket(void* buffer, size_t size);
+    static uint32_t CalculateTimeout(int timeout, uint64_t start, bool& expired);
+
     virtual int InternalWrite(const void* buffer, size_t size, int timeout) = 0;
   };
 

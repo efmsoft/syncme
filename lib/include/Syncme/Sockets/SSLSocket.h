@@ -15,7 +15,6 @@ namespace Syncme
     SINCMELNK SSLSocket(SocketPair* pair, SSL* ssl);
     SINCMELNK ~SSLSocket();
 
-    SINCMELNK int Read(void* buffer, size_t size, int timeout) override;
     SINCMELNK void Shutdown() override;
 
     SINCMELNK SKT_ERROR Ossl2SktError(int ret) const override;
