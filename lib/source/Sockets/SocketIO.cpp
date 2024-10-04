@@ -1,4 +1,5 @@
 #include <cassert>
+#include <string.h>
 
 #include <Syncme/Sockets/Socket.h>
 #include <Syncme/TickCount.h>

@@ -1,3 +1,6 @@
+#include <Syncme/Logger/Log.h>
+#include <Syncme/Sockets/Socket.h>
+
 #if SKTEPOLL
 void Socket::EventSignalled(WAIT_RESULT r, uint32_t cookie, bool failed)
 {

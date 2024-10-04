@@ -454,7 +454,7 @@ bool Socket::SwitchToUnblockingMode()
     BreakEventCookie = BreakRead->RegisterWait(
       std::bind(&Socket::EventSignalled, this, WAIT_RESULT::OBJECT_3, _1, _2)
     );
-#else if defined(_WIN32)
+#elif defined(_WIN32)
     BreakEventCookie = BreakRead->RegisterWait(
       std::bind(&Socket::SignallWindowsEvent, this, WStopIO, _1, _2)
     );
