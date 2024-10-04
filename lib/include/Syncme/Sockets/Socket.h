@@ -49,6 +49,8 @@ namespace Syncme
 
     size_t Wait;
     uint32_t WaitTime;
+
+    uint32_t Interrupts;
   };
 
   union IOFlags
@@ -111,6 +113,7 @@ namespace Syncme
     int Poll;
     int EventDescriptor;
     int EventsMask;
+    uint32_t EpollMask;
 #endif
 
   public:
@@ -158,16 +161,18 @@ namespace Syncme
 
     SINCMELNK virtual int InternalRead(void* buffer, size_t size, int timeout) = 0;
 
-#if SKTEPOLL
-    SINCMELNK WAIT_RESULT FastWaitForMultipleObjects(int timeout);
-#endif
-
     SINCMELNK virtual bool IO(int timeout, IOStat& stat, IOFlags flags = IOFlags{});
     SINCMELNK virtual bool Flush(int timeout = -1);
 
   protected:
     bool ReadIO(IOStat& stat);
     bool WriteIO(IOStat& stat);
+
+#if SKTEPOLL
+    WAIT_RESULT FastWaitForMultipleObjects(int timeout, IOStat& stat);
+    WAIT_RESULT EventStateToWaitResult();
+    bool UpdateEpollEventList();
+#endif
 
 #if SKTEPOLL
     void EventSignalled(WAIT_RESULT r, uint32_t cookie, bool failed);

@@ -48,6 +48,7 @@ Socket::Socket(SocketPair* pair, int handle, bool enableClose)
   , Poll(-1)
   , EventDescriptor(-1)
   , EventsMask(0)
+  , EpollMask(0)
 #endif
 {
   StartTX = CreateSynchronizationEvent();
@@ -249,12 +250,14 @@ bool Socket::Attach(int socket, bool enableClose)
 
   epoll_event ev{};
   ev.data.fd = Handle;
-  ev.events = EPOLLIN | EPOLLOUT | EPOLLRDHUP;
+  ev.events = EPOLLIN | EPOLLRDHUP;
 
   if (epoll_ctl(Poll, EPOLL_CTL_ADD, Handle, &ev) == -1)
   {
     LogosE("epoll_ctl(EPOLL_CTL_ADD) failed for Handle");
   }
+  else
+    EpollMask = ev.events;
 #endif
 
   return true;

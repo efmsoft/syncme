@@ -11,7 +11,6 @@ using namespace Syncme;
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
 
-
 void Socket::EventSignalled(WAIT_RESULT r, uint32_t cookie, bool failed)
 {
   // write() will force epoll_wait to exit
@@ -20,7 +19,7 @@ void Socket::EventSignalled(WAIT_RESULT r, uint32_t cookie, bool failed)
   auto s = write(EventDescriptor, &value, sizeof(value));
   if (s != sizeof(value))
   {
-    LogE("write failed");
+    LogosE("epoll: unable to set event");
   }
 }
 
@@ -30,11 +29,11 @@ void Socket::ResetEventObject()
   int n = write(EventDescriptor, &value, sizeof(value));
   if (n != sizeof(value))
   {
-    LogosE("write failed");
+    LogosE("epoll: unable to reset event");
   }
 }
 
-WAIT_RESULT Socket::FastWaitForMultipleObjects(int timeout)
+WAIT_RESULT Socket::EventStateToWaitResult()
 {
   if (GetEventState(Pair->GetExitEvent()) == STATE::SIGNALLED)
     return WAIT_RESULT::OBJECT_0;
@@ -48,22 +47,62 @@ WAIT_RESULT Socket::FastWaitForMultipleObjects(int timeout)
   if (GetEventState(StartTX) == STATE::SIGNALLED)
     return WAIT_RESULT::OBJECT_4;
 
-  epoll_event events[2]{};
-  int n = epoll_wait(Poll, &events[0], 2, timeout);
-  int en = errno;
+  return WAIT_RESULT::FAILED;
+}
 
-  if (n < 0)
+bool Socket::UpdateEpollEventList()
+{
+  epoll_event ev{};
+  ev.data.fd = Handle;
+  ev.events = EPOLLIN | EPOLLRDHUP;
+
+  if (TxQueue.IsEmpty() == false)
+    ev.events |= EPOLLOUT;
+
+  if (EpollMask == ev.events)
+    return true;
+
+  if (epoll_ctl(Poll, EPOLL_CTL_MOD, Handle, &ev) == -1)
   {
+    LogosE("epoll: epoll_ctl(EPOLL_CTL_MOD) failed for Handle");
+    return false;
+  }
+
+  EpollMask = ev.events;
+  return true;
+}
+
+WAIT_RESULT Socket::FastWaitForMultipleObjects(int timeout, IOStat& stat)
+{
+  WAIT_RESULT result = EventStateToWaitResult();
+  if (result != WAIT_RESULT::FAILED)
+    return result;
+
+  // add/remove EPOLLOUT
+  if (UpdateEpollEventList() == false)
+    return WAIT_RESULT::FAILED;
+
+  int n = 0;
+  epoll_event events[2]{};
+
+  while (true)
+  {
+    n = epoll_wait(Poll, events, 2, timeout);
+
+    if (n >= 0)
+      break;
+
+    int en = errno;
     if (en != EINTR)
     {
-      LogE("epoll_wait failed. Error %i", en);
+      LogosE("epoll: epoll_wait failed");
       return WAIT_RESULT::FAILED;
     }
 
-    n = 0;
+    stat.Interrupts++;
   }
 
-  WAIT_RESULT result = WAIT_RESULT::TIMEOUT;
+  result = WAIT_RESULT::TIMEOUT;
 
   for (int i = 0; i < n; ++i)
   {
@@ -75,18 +114,17 @@ WAIT_RESULT Socket::FastWaitForMultipleObjects(int timeout)
       auto n = read(EventDescriptor, &value, sizeof(value));
       if (n != sizeof(value))
       {
-        LogosE("read failed");
+        LogosE("epoll: unable to read event state");
       }
-      else
-      {
-        result = WAIT_RESULT(value - 1);
-        if (result != WAIT_RESULT::OBJECT_0 && result != WAIT_RESULT::OBJECT_1)
-        {
-          ResetEventObject();
-        }
-      }
+      
+      ResetEventObject();
+  
+      result = EventStateToWaitResult();
+      if (result != WAIT_RESULT::FAILED)
+        return result;
     }
-    else if (e.data.fd == Handle)
+
+    if (e.data.fd == Handle)
     {
       if (e.events & EPOLLIN)
         EventsMask |= EVENT_READ;
@@ -148,7 +186,7 @@ bool Socket::IO(int timeout, IOStat& stat, IOFlags flags)
       break;
 
     TimePoint t0;
-    auto rc = FastWaitForMultipleObjects(timeout);
+    auto rc = FastWaitForMultipleObjects(timeout, stat);
     stat.WaitTime += t0.ElapsedSince();
     stat.Wait++;
 
