@@ -45,12 +45,12 @@ namespace Syncme
 
     size_t Rcv;
     size_t RcvPkt;
-    uint32_t RcvTime;
+    uint64_t RcvTime;
 
     size_t Wait;
-    uint32_t WaitTime;
+    uint64_t WaitTime;
 
-    uint32_t Interrupts;
+    uint64_t Interrupts;
   };
 
   union IOFlags
