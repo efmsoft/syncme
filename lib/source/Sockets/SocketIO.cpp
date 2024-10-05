@@ -47,18 +47,20 @@ bool Socket::WriteIO(IOStat& stat)
 
   for (;;)
   {
-    size_t size = 0;
-    const void* p = TxQueue.FirstItem(size);
-    if (p == nullptr)
+    auto b = TxQueue.PopFirst();
+    if (b == nullptr)
       break;
 
-    int n = InternalWrite(p, size, 0);
+    size_t size = b->size();
+    int n = InternalWrite(b->data(), size, 0);
+
+    TxQueue.PushFree(b);
+
     if (n > 0)
     {
       stat.Sent += size;
       stat.SentPkt++;
 
-      TxQueue.RemoveFirst();
       continue;
     }
 
@@ -78,17 +80,16 @@ bool Socket::WriteIO(IOStat& stat)
 bool Socket::ReadIO(IOStat& stat)
 {
   TimePoint t0;
-  char* buffer = (char*)alloca(Sockets::IO::BUFFER_SIZE);
-
+  
   for (;;)
   {
-    int n = InternalRead(buffer, Sockets::IO::BUFFER_SIZE, 0);
+    int n = InternalRead(RxBuffer, Sockets::IO::BUFFER_SIZE, 0);
     if (n > 0)
     {
       stat.Rcv += n;
       stat.RcvPkt++;
 
-      RxQueue.Append(buffer, n);
+      RxQueue.Append(RxBuffer, n);
       continue;
     }
 
@@ -116,34 +117,21 @@ int Socket::Read(void* buffer, size_t size, int timeout)
   IOStat stat{};
   bool f = IO(timeout, stat);
 
-  if (RxQueue.IsEmpty() == true)
-    return f ? 0 : -1;
-
   size_t cb = 0;
-  if (RxQueue.Size() < size)
-  {
-    auto p = RxQueue.Join(cb);
-
-    if (p == nullptr)
-      return f ? 0 : -1;
-
-    memcpy(buffer, p, cb);
-    RxQueue.RemoveFirst();
-    return int(cb);
-  }
-
-  auto p = RxQueue.FirstItem(cb);
-  if (p == nullptr)
+  auto b = RxQueue.PopFirst();
+  if (b == nullptr)
     return f ? 0 : -1;
 
+  cb = b->size();
   if (cb > size)
   {
     SKT_SET_LAST_ERROR(IO_INCOMPLETE);
+    RxQueue.PushFree(b);
     return -1;
   }
 
-  memcpy(buffer, p, cb);
-  RxQueue.RemoveFirst();
+  memcpy(buffer, b->data(), cb);
+  RxQueue.PushFree(b);
   return int(cb);
 }
 

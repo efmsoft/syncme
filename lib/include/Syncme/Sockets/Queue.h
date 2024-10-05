@@ -28,10 +28,12 @@ namespace Syncme
         size_t Limit;
         TSignalTxReady Signal;
 
-        std::mutex Lock;
+        std::recursive_mutex Lock;
         BufferList Packets;
         BufferList Free;
         size_t Total;
+
+        bool AutoJoin;
 
       public:
         SINCMELNK Queue(size_t limit = LIMIT, TSignalTxReady signal = TSignalTxReady());
@@ -42,13 +44,14 @@ namespace Syncme
         SINCMELNK bool IsEmpty() const;
         SINCMELNK size_t Size() const;
 
-        SINCMELNK const void* Join(size_t& cb);
-        SINCMELNK const void* FirstItem(size_t& cb);
-        SINCMELNK void RemoveFirst();
+        SINCMELNK BufferPtr Join(size_t upto = -1);
+        SINCMELNK BufferPtr PopFirst();
 
-      private:
-        BufferPtr PopFree();
-        void PushFree(BufferPtr b);
+        SINCMELNK BufferPtr GetBuffer();
+        SINCMELNK BufferPtr PopFree();
+        SINCMELNK void PushFree(BufferPtr b);
+
+        SINCMELNK void SetAutoJoin(bool f);
       };
     }
   }

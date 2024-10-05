@@ -14,7 +14,13 @@ Queue::Queue(size_t limit, TSignalTxReady signal)
   : Limit(limit)
   , Signal(signal)
   , Total(0)
+  , AutoJoin(false)
 {
+}
+
+void Queue::SetAutoJoin(bool f)
+{
+  AutoJoin = f;
 }
 
 void Queue::SetSignallReady(TSignalTxReady signal)
@@ -48,6 +54,22 @@ void Queue::PushFree(BufferPtr b)
   }
 }
 
+BufferPtr Queue::GetBuffer()
+{
+  BufferPtr b = PopFree();
+
+  if (b == nullptr)
+  {
+    b = std::make_shared<Buffer>();
+    if (b == nullptr)
+      return BufferPtr();
+
+    b->reserve(BUFFER_SIZE);
+  }
+
+  return b;
+}
+
 bool Queue::Append(BufferPtr buffer)
 {
   if (buffer == nullptr)
@@ -79,27 +101,41 @@ bool Queue::Append(const void* p, size_t cb)
   if (Total + cb > Limit)
     return false;
 
-  BufferPtr b = PopFree();
-  
-  if (b == nullptr)
+  do
   {
-    b = std::make_shared<Buffer>();
+    if (AutoJoin)
+    {
+      std::lock_guard guard(Lock);
+
+      if (Packets.empty() == false)
+      {
+        auto& b = Packets.back();
+        size_t pos = b->size();
+
+        if (pos + cb <= BUFFER_SIZE)
+        {
+          b->resize(pos + cb);
+          memcpy(&(*b)[pos], p, cb);
+          Total += cb;
+          
+          break;
+        }
+      }
+    }
+
+    BufferPtr b = GetBuffer();
     if (b == nullptr)
       return false;
 
-    b->reserve(BUFFER_SIZE);
-  }
+    b->resize(cb);
+    memcpy(&(*b)[0], p, cb);
 
-  b->resize(cb);
-  memcpy(&(*b)[0], p, cb);
-
-  if (true)
-  {
     std::lock_guard guard(Lock);
 
     Packets.push_back(b);
     Total += cb;
-  }
+
+  } while (false);
 
   if (Signal)
     Signal();
@@ -117,26 +153,17 @@ size_t Queue::Size() const
   return Total;
 }
 
-const void* Queue::Join(size_t& cb)
+BufferPtr Queue::Join(size_t upto)
 {
   std::lock_guard guard(Lock);
   
-  if (Packets.size() == 0)
-  {
-    cb = 0;
-    return nullptr;
-  }
+  if (Packets.size() <= 1)
+    return PopFirst();
 
-  if (Packets.size() == 1)
-  {
-    auto& b = Packets.front();
-    
-    cb = b->size();
-    return b->data();
-  }
+  if (upto != -1 && Total > upto)
+    return PopFirst();
 
-  auto& b = Packets.front();
-    
+  BufferPtr b = Packets.front();    
   size_t pos = b->size();
   b->resize(Total);
 
@@ -155,49 +182,28 @@ const void* Queue::Join(size_t& cb)
     it = Packets.erase(it);
   }
 
-  cb = Total;
-  return b->data();
+  return PopFirst();
 }
 
-const void* Queue::FirstItem(size_t& cb)
+BufferPtr Queue::PopFirst()
 {
   std::lock_guard guard(Lock);
 
   if (Packets.empty())
   {
     assert(Total == 0);
-
-    cb = 0;
-    return nullptr;
+    return BufferPtr();
   }
 
-  auto& b = Packets.front();
-  
-  cb = b->size();
-  return b->data();
-}
+  BufferPtr b = Packets.front();
+  Packets.pop_front();
 
-void Queue::RemoveFirst()
-{
-  BufferPtr b;
-
-  if (true)
-  {
-    std::lock_guard guard(Lock);
-
-    assert(Total);
-    assert(Packets.size());
-
-    b = Packets.front();
-    Total -= b->size();
+  Total -= b->size();
 
 #if defined(_WIN32) && defined(_DEBUG)
-    if (int64_t(Total) < 0)
-      DebugBreak();
+  if (int64_t(Total) < 0)
+    DebugBreak();
 #endif
 
-    Packets.pop_front();
-  }
-
-  PushFree(b);
+  return b;
 }
