@@ -62,6 +62,10 @@ Socket::Socket(SocketPair* pair, int handle, bool enableClose)
 #endif
 
 #if SKTEPOLL
+  TxQueue.SetSignallReady(
+    std::bind(&Socket::EventSignalled, this, WAIT_RESULT::OBJECT_4, 0, false)
+  );
+  
   StartTXEventCookie = StartTX->RegisterWait(
     std::bind(&Socket::EventSignalled, this, WAIT_RESULT::OBJECT_4, _1, _2)
   );
