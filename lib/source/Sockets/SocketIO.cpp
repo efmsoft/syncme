@@ -1,6 +1,7 @@
 #include <cassert>
 #include <string.h>
 
+#include <Syncme/Sockets/SocketPair.h>
 #include <Syncme/Sockets/Socket.h>
 #include <Syncme/TickCount.h>
 #include <Syncme/TimePoint.h>
@@ -58,6 +59,8 @@ bool Socket::WriteIO(IOStat& stat)
 
     if (n > 0)
     {
+      LogmeI("sent %zu bytes to %s", size, Pair->WhoAmI(this));
+
       stat.Sent += size;
       stat.SentPkt++;
 
@@ -88,6 +91,8 @@ bool Socket::ReadIO(IOStat& stat)
     {
       stat.Rcv += n;
       stat.RcvPkt++;
+
+      LogmeI("queued %i bytes from %s", n, Pair->WhoAmI(this));
 
       RxQueue.Append(RxBuffer, n);
       continue;

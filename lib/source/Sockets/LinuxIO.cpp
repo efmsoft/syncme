@@ -222,7 +222,7 @@ bool Socket::IO(int timeout, IOStat& stat, IOFlags flags)
       Peer.Disconnected = true;
       Peer.When = GetTimeInMillisec();
 
-      LogW("peer disconnected");
+      LogW("%s: peer disconnected", Pair->WhoAmI(this));
     }
 
     // Other flags are not interesting for us
