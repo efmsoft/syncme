@@ -55,17 +55,21 @@ bool Socket::WriteIO(IOStat& stat)
     size_t size = b->size();
     int n = InternalWrite(b->data(), size, 0);
 
-    TxQueue.PushFree(b);
-
     if (n > 0)
     {
       LogmeI("sent %zu bytes to %s", size, Pair->WhoAmI(this));
+      TxQueue.PushFree(b);
 
       stat.Sent += size;
       stat.SentPkt++;
 
       continue;
     }
+
+    if (b->size())
+      TxQueue.PushFront(b);
+    else
+      TxQueue.PushFree(b);
 
     if (n < 0)
     {

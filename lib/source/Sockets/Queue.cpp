@@ -185,6 +185,20 @@ BufferPtr Queue::Join(size_t upto)
   return PopFirst();
 }
 
+void Queue::PushFront(BufferPtr b)
+{
+  if (true)
+  {
+    std::lock_guard guard(Lock);
+
+    Packets.push_front(b);
+    Total += b->size();
+  }
+
+  if (Signal)
+    Signal();
+}
+
 BufferPtr Queue::PopFirst()
 {
   std::lock_guard guard(Lock);
