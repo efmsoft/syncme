@@ -52,5 +52,8 @@ namespace Syncme
 
     SINCMELNK int Read(std::vector<char>& buffer, SocketPtr& from, int timeout = FOREVER);
     SINCMELNK int Read(void* buffer, size_t size, SocketPtr& from, int timeout = FOREVER);
+
+  private:
+    int IO(SocketPtr socket, void* buffer, size_t size, SocketPtr& from, int timeout);
   };
 }

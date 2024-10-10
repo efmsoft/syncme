@@ -70,6 +70,12 @@ int BIOSocket::InternalRead(void* buffer, size_t size, int timeout)
       return 0;
     }
 
+    if (Peer.Disconnected)
+    {
+      SKT_SET_LAST_ERROR(GRACEFUL_DISCONNECT);
+      return 0;
+    }
+
     SKT_SET_LAST_ERROR(IO_INCOMPLETE);
     CloseNotify = false;
     n = -1;
@@ -120,7 +126,7 @@ SKT_ERROR BIOSocket::Ossl2SktError(int ret) const
 
 void BIOSocket::LogIoError(const char* fn, const char* text)
 {
-  if (Pair->Closing())
+  if (Pair->Closing() && LastError == SKT_ERROR::GRACEFUL_DISCONNECT)
     return;
 
 #ifdef USE_LOGME

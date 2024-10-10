@@ -139,10 +139,44 @@ int SocketPair::Read(std::vector<char>& buffer, SocketPtr& from, int timeout)
   return Read(&buffer[0], buffer.size(), from, timeout);
 }
 
+
+int SocketPair::IO(
+  SocketPtr socket
+  , void* buffer
+  , size_t size
+  , SocketPtr& from
+  , int timeout
+)
+{
+  IOStat io{};
+  if (socket->IO(timeout, io) == false)
+  {
+    from = socket;
+    return -1;
+  }
+
+  auto b = Client->RxQueue.Join(size);
+  if (b != nullptr)
+  {
+    memcpy(buffer, b->data(), b->size());
+    int n = int(b->size());
+
+    Client->RxQueue.PushFree(b);
+    from = Client;
+    return n;
+  }
+
+  return 0;
+}
+
 int SocketPair::Read(void* buffer, size_t size, SocketPtr& from, int timeout)
 {
+  auto start = GetTimeInMillisec();
+
   int n = 0;
+  IOStat io{};
   from.reset();
+
   auto serverValid = Server != nullptr && Server->RxEvent != nullptr;
   auto clientValid = Client != nullptr && Client->RxEvent != nullptr;
 
@@ -150,25 +184,11 @@ int SocketPair::Read(void* buffer, size_t size, SocketPtr& from, int timeout)
     return -1;
 
   if (clientValid)
-  {
-    n = Client->Read(buffer, size, timeout);
-    if (n > 0)
-      from = Client;
-
-    return n;
-  }
+    return IO(Client, buffer, size, from, timeout);
 
   if (serverValid)
-  {
-    n = Server->Read(buffer, size, timeout);
-    if (n > 0)
-      from = Server;
-
-    return n;
-  }
-
-  auto start = GetTimeInMillisec();
-
+    return IO(Server, buffer, size, from, timeout);
+ 
   EventArray events(
     GetExitEvent()
     , GetCloseEvent()
@@ -180,6 +200,14 @@ int SocketPair::Read(void* buffer, size_t size, SocketPtr& from, int timeout)
 
   for (int loops = 0;; ++loops)
   {
+    n = IO(Client, buffer, size, from, timeout);
+    if (n != 0)
+      return n;
+
+    n = IO(Server, buffer, size, from, timeout);
+    if (n != 0)
+      return n;
+
     auto t = GetTimeInMillisec();
     uint32_t milliseconds = FOREVER;
 
@@ -244,20 +272,11 @@ int SocketPair::Read(void* buffer, size_t size, SocketPtr& from, int timeout)
     {
       socket->Peer.Disconnected = true;
       socket->Peer.When = GetTimeInMillisec();
-
-      int tout = timeout;
       timeout = 0;
 
-      LogW("%s: peer disconnected. timeout %i -> %i", WhoAmI(socket.get()), tout, timeout);
+      LogW("%s: peer disconnected", WhoAmI(socket.get()));
 
       // We have to drain input buffer before closing socket
-    }
-
-    if (netev & EVENT_READ)
-    {
-      n = socket->InternalRead(buffer, size, 0);
-      from = socket;
-      break;
     }
   }
 

@@ -147,10 +147,15 @@ bool Socket::IO(int timeout, IOStat& stat, IOFlags flags)
   std::lock_guard<std::mutex> guard(IOLock);
 
   if (RxEvent == nullptr)
+  {
+    SKT_SET_LAST_ERROR(GENERIC);
     return false;
+  }
 
   auto start = GetTimeInMillisec();
+
   memset(&stat, 0, sizeof(stat));
+  SKT_SET_LAST_ERROR(NONE);
 
   for (bool expired = false;;)
   {
@@ -171,7 +176,13 @@ bool Socket::IO(int timeout, IOStat& stat, IOFlags flags)
     if (Peer.Disconnected)
     {
       // If there are data to process, we have to return success
-      return RxQueue.IsEmpty() == false;
+      if (RxQueue.IsEmpty())
+      {
+        SKT_SET_LAST_ERROR(GRACEFUL_DISCONNECT);
+        return false;
+      }
+
+      return true;
     }
 
     // Return immediatelly if we read at least one packet
@@ -183,7 +194,10 @@ bool Socket::IO(int timeout, IOStat& stat, IOFlags flags)
 
     uint32_t ms = CalculateTimeout(timeout, start, expired);
     if (expired)
+    {
+      SKT_SET_LAST_ERROR(TIMEOUT);
       break;
+    }
 
     TimePoint t0;
     auto rc = FastWaitForMultipleObjects(timeout, stat);
@@ -191,11 +205,17 @@ bool Socket::IO(int timeout, IOStat& stat, IOFlags flags)
     stat.Wait++;
 
     if (rc == WAIT_RESULT::TIMEOUT)
+    {
+      SKT_SET_LAST_ERROR(TIMEOUT);
       break;
+    }
 
     // WExitEvent or WStopEvent
     if (rc == WAIT_RESULT::OBJECT_0 || rc == WAIT_RESULT::OBJECT_1)
+    {
+      SKT_SET_LAST_ERROR(CONNECTION_ABORTED);
       return false;
+    }
 
     // BreakRead
     if (rc == WAIT_RESULT::OBJECT_3)
