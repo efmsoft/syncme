@@ -7,6 +7,7 @@
 // Must be included after windows.h !!!
 #include <Syncme/CritSection.h>
 #include <Syncme/ProcessThreadId.h>
+#include <Syncme/TickCount.h>
 
 using namespace Syncme;
 
@@ -42,6 +43,12 @@ CS::CS()
   : SectionData{}
 #endif  
 {
+#ifdef CS_DETECT_LOCKS
+  MaxWait = INFINITE;
+  MutexHandle = ::CreateMutex(nullptr, false, nullptr);
+  OwningThread = 0;
+#endif
+
 #if CS_USE_CRITICAL_SECTION
   static_assert(sizeof(SectionData) >= sizeof(CRITICAL_SECTION), "SectionData size is too small");
 
@@ -63,8 +70,19 @@ CS::CS()
 
 CS::~CS()
 {
+#ifdef CS_DETECT_LOCKS
+  ::CloseHandle(MutexHandle);
+#endif
+
 #if CS_USE_CRITICAL_SECTION
   DeleteCriticalSection(&CriticalSection);
+#endif
+}
+
+void CS::SetMaxWait(int n)
+{
+#ifdef CS_DETECT_LOCKS
+  MaxWait = n;
 #endif
 }
 
@@ -75,19 +93,43 @@ const CS::AutoLock CS::Lock()
 
 void CS::Acquire()
 {
-#if CS_USE_CRITICAL_SECTION
-  EnterCriticalSection(&CriticalSection);
+#ifdef CS_DETECT_LOCKS
+  do
+  {
+    auto rc = ::WaitForSingleObject(MutexHandle, MaxWait);
+    if (rc == WAIT_TIMEOUT)
+    {
+      DebugBreak();
+      continue;
+    }
+
+    if (rc != WAIT_OBJECT_0)
+    {
+      DebugBreak();
+    }
+    
+    OwningThread = GetCurrentThreadId();
+
+  } while (false);
 #else
-  Mutex.lock();
-  OwningThread = GetCurrentThreadId();
+  #if CS_USE_CRITICAL_SECTION
+    EnterCriticalSection(&CriticalSection);
+  #else
+    Mutex.lock();
+    OwningThread = GetCurrentThreadId();
+  #endif
 #endif
 }
 
 void CS::Release()
 {
-#if CS_USE_CRITICAL_SECTION
-  LeaveCriticalSection(&CriticalSection);
+#ifdef CS_DETECT_LOCKS
+  ::ReleaseMutex(MutexHandle);
 #else
-  Mutex.unlock();
+  #if CS_USE_CRITICAL_SECTION
+    LeaveCriticalSection(&CriticalSection);
+  #else
+    Mutex.unlock();
+  #endif
 #endif
 }

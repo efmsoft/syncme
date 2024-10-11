@@ -7,6 +7,12 @@
 #include <Syncme/Api.h>
 #include <Syncme/Sync.h>
 
+#define _CS_DETECT_LOCKS 0
+
+#if defined(_WIN32) && defined(_DEBUG) && _CS_DETECT_LOCKS
+#define CS_DETECT_LOCKS
+#endif
+
 namespace Syncme
 {
   class CS
@@ -21,6 +27,12 @@ namespace Syncme
     };
 #else
     std::recursive_mutex Mutex;
+    uint64_t OwningThread;
+#endif
+
+#ifdef CS_DETECT_LOCKS
+    int MaxWait;
+    void* MutexHandle;
     uint64_t OwningThread;
 #endif
 
@@ -51,6 +63,8 @@ namespace Syncme
 
     SINCMELNK void Acquire();
     SINCMELNK void Release();
+
+    SINCMELNK void SetMaxWait(int n);
 
   private:
     CS(const CS&) = delete;
