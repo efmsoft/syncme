@@ -11,10 +11,16 @@
 
 using namespace Syncme;
 
-CS::AutoLock::AutoLock(CS* section)
+CS::AutoLock::AutoLock(CS* section, bool tryLock)
   : Section(section)
 {
-  Section->Acquire();
+  if (tryLock)
+  {
+    if (Section->TryAcquire() == false)
+      Section = nullptr;
+  }
+  else
+    Section->Acquire();
 }
 
 CS::AutoLock::AutoLock(AutoLock&& src) noexcept
@@ -36,6 +42,11 @@ void CS::AutoLock::Release()
 
   if (s)
     s->Release();
+}
+
+CS::AutoLock::operator bool() const
+{
+  return Section != nullptr;
 }
 
 CS::CS()
@@ -86,9 +97,29 @@ void CS::SetMaxWait(int n)
 #endif
 }
 
+const CS::AutoLock CS::TryLock()
+{
+  return AutoLock(this, true);
+}
+
 const CS::AutoLock CS::Lock()
 {
-  return AutoLock(this);
+  return AutoLock(this, false);
+}
+
+bool CS::TryAcquire()
+{
+#if CS_USE_CRITICAL_SECTION
+  if (TryEnterCriticalSection(&CriticalSection))
+    return true;
+#else
+  if (Mutex.try_lock())
+  {
+    OwningThread = GetCurrentThreadId();
+    return true;
+  }
+  return false;
+#endif
 }
 
 void CS::Acquire()

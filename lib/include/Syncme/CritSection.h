@@ -50,17 +50,20 @@ namespace Syncme
       SINCMELNK ~AutoLock();
 
       SINCMELNK void Release();
+      SINCMELNK operator bool() const;
 
     private:
       AutoLock() = delete;
       AutoLock(const AutoLock&) = delete;
-      AutoLock(CS* section);
+      AutoLock(CS* section, bool tryLock);
 
       AutoLock& operator=(const AutoLock&) = delete;
     };
 
     SINCMELNK const AutoLock Lock();
+    SINCMELNK const AutoLock TryLock();
 
+    SINCMELNK bool TryAcquire();
     SINCMELNK void Acquire();
     SINCMELNK void Release();
 
