@@ -112,6 +112,8 @@ bool CS::TryAcquire()
 #if CS_USE_CRITICAL_SECTION
   if (TryEnterCriticalSection(&CriticalSection))
     return true;
+
+  return false;
 #else
   if (Mutex.try_lock())
   {
