@@ -53,6 +53,10 @@ int BIOSocket::InternalRead(void* buffer, size_t size, int timeout)
 {
   SKT_SET_LAST_ERROR(NONE);
 
+  int n = ReadPacket(buffer, size);
+  if (n)
+    return n;
+
   std::lock_guard<std::mutex> guard(BioLock);
   int n = BIO_read(Bio, buffer, int(size));
 
