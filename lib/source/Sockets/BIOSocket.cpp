@@ -58,7 +58,7 @@ int BIOSocket::InternalRead(void* buffer, size_t size, int timeout)
     return n;
 
   std::lock_guard<std::mutex> guard(BioLock);
-  int n = BIO_read(Bio, buffer, int(size));
+  n = BIO_read(Bio, buffer, int(size));
 
   if (n == 0)
   {
