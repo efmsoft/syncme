@@ -4,6 +4,7 @@
 #include <list>
 #include <memory>
 #include <string>
+#include <thread>
 
 #include <Syncme/Api.h>
 #include <Syncme/CritSection.h>
