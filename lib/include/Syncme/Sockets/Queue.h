@@ -41,6 +41,7 @@ namespace Syncme
 
         SINCMELNK bool Append(BufferPtr buffer);
         SINCMELNK bool Append(const void* p, size_t cb);
+        SINCMELNK bool Insert(const void* p, size_t cb);
         SINCMELNK bool IsEmpty() const;
         SINCMELNK size_t Size() const;
 

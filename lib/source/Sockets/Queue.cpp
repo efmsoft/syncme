@@ -92,6 +92,37 @@ bool Queue::Append(BufferPtr buffer)
   return true;
 }
 
+bool Queue::Insert(const void* p, size_t cb)
+{
+  assert(p);
+  assert(cb);
+  assert(cb <= BUFFER_SIZE);
+
+  if (Total + cb > Limit)
+    return false;
+
+  do
+  {
+    BufferPtr b = GetBuffer();
+    if (b == nullptr)
+      return false;
+
+    b->resize(cb);
+    memcpy(&(*b)[0], p, cb);
+
+    std::lock_guard guard(Lock);
+
+    Packets.push_front(b);
+    Total += cb;
+
+  } while (false);
+
+  if (Signal)
+    Signal();
+
+  return true;
+}
+
 bool Queue::Append(const void* p, size_t cb)
 {
   assert(p);
