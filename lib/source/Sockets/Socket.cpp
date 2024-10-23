@@ -321,8 +321,10 @@ bool Socket::SetOptions()
   getsockopt(Handle, SOL_SOCKET, SO_SNDBUF, (char*)&sndbuf, &len);
   LogI("%s: Initial size of buffers rcv=%i, snd=%i", Pair->WhoAmI(this), rcvbuf, sndbuf);
 
-  int rcvsize = config->GetInt("rcvbuf", rcvbuf);
-  if (rcvsize != rcvbuf)
+  // we should not reduce the buffer size 
+  // under any circumstances !!!
+  int rcvsize = config->GetInt("rcvbuf", -1);
+  if (rcvsize != -1 && rcvsize > rcvbuf)
   {
     if (setsockopt(Handle, SOL_SOCKET, SO_RCVBUF, (char*)&rcvsize, sizeof(rcvsize)))
     {
@@ -333,8 +335,10 @@ bool Socket::SetOptions()
     LogI("%s: new size of rcv buffer is %i", Pair->WhoAmI(this), rcvsize);
   }
 
-  int sndsize = config->GetInt("sndbuf", sndbuf);
-  if (sndsize != sndbuf)
+  // we should not reduce the buffer size 
+  // under any circumstances !!!
+  int sndsize = config->GetInt("sndbuf", -1);
+  if (sndsize != -1 && sndsize > sndbuf)
   {
     if (setsockopt(Handle, SOL_SOCKET, SO_SNDBUF, (char*)&sndsize, sizeof(sndsize)))
     {
