@@ -235,7 +235,7 @@ SKT_ERROR SSLSocket::Ossl2SktError(int ret) const
 
 void SSLSocket::LogIoError(const char* fn, const char* text)
 {
-  if (Pair->Closing())
+  if (Pair->Closing() || LastError == SKT_ERROR::GRACEFUL_DISCONNECT)
     return;
 
 #ifdef USE_LOGME

@@ -130,7 +130,7 @@ SKT_ERROR BIOSocket::Ossl2SktError(int ret) const
 
 void BIOSocket::LogIoError(const char* fn, const char* text)
 {
-  if (Pair->Closing() && LastError == SKT_ERROR::GRACEFUL_DISCONNECT)
+  if (Pair->Closing() || LastError == SKT_ERROR::GRACEFUL_DISCONNECT)
     return;
 
 #ifdef USE_LOGME
