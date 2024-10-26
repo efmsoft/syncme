@@ -7,6 +7,6 @@
 namespace Syncme
 {
   SINCMELNK uint64_t GetCurrentProcessId();
-  SINCMELNK uint64_t GetCurrentThreadId();
+  SINCMELNK uint64_t GetCurrentThreadId(bool pthreadself = false);
 }
  
