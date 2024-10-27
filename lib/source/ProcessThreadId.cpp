@@ -14,6 +14,7 @@ uint64_t Syncme::GetCurrentThreadId(bool pthreadself)
 }
 #elif defined(__APPLE__) || defined(__linux__) || defined(__sun__)
 
+#include <pthread.h>
 #include <unistd.h>
 
 uint64_t Syncme::GetCurrentProcessId()
