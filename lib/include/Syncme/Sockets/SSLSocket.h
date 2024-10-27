@@ -20,6 +20,7 @@ namespace Syncme
     SINCMELNK SKT_ERROR Ossl2SktError(int ret) const override;
     SINCMELNK int GetFD() const override;
     SINCMELNK void LogIoError(const char* fn, const char* text) override;
+    SINCMELNK std::string GetProtocol() const override;
 
   private:
     int InternalWrite(const void* buffer, size_t size, int timeout) override;

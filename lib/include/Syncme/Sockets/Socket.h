@@ -144,6 +144,7 @@ namespace Syncme
     SINCMELNK virtual int GetFD() const = 0;
     SINCMELNK virtual SKT_ERROR Ossl2SktError(int ret) const = 0;
     SINCMELNK virtual void LogIoError(const char* fn, const char* text) = 0;
+    SINCMELNK virtual std::string GetProtocol() const;
 
     SINCMELNK bool InitPeer();
     SINCMELNK bool InitAcceptAddress();

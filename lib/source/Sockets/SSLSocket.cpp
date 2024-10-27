@@ -30,6 +30,11 @@ int SSLSocket::GetFD() const
   return SSL_get_fd(Ssl);
 }
 
+std::string SSLSocket::GetProtocol() const
+{
+  return SSL_get_version(Ssl);
+}
+
 void SSLSocket::Shutdown()
 {
   LogI("Shutting down connection...");

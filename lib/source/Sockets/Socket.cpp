@@ -170,6 +170,11 @@ const SocketError& Socket::GetLastError() const
   return LastError;
 }
 
+std::string Socket::GetProtocol() const
+{
+  return std::string();
+}
+
 int Socket::Detach(bool* enableClose)
 {
   auto guard = Lock.Lock();
