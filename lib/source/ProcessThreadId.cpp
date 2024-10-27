@@ -26,6 +26,6 @@ uint64_t Syncme::GetCurrentThreadId(bool pthreadself)
   if (pthreadself)
     return (uint64_t)pthread_self();
 
-  return (uint64_t)getid();
+  return (uint64_t)gettid();
 } 
 #endif
