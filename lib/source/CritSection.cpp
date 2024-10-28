@@ -117,7 +117,7 @@ bool CS::TryAcquire()
 #else
   if (Mutex.try_lock())
   {
-    OwningThread = GetCurrentThreadId();
+    OwningThread = GetCurrentThreadId(true);
     return true;
   }
   return false;
@@ -141,7 +141,7 @@ void CS::Acquire()
       DebugBreak();
     }
     
-    OwningThread = GetCurrentThreadId();
+    OwningThread = GetCurrentThreadId(true);
 
   } while (false);
 #else
