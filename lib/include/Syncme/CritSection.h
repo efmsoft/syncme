@@ -27,7 +27,9 @@ namespace Syncme
     };
 #else
     std::recursive_mutex Mutex;
+#ifdef _DEBUG
     uint64_t OwningThread;
+#endif
 #endif
 
 #ifdef CS_DETECT_LOCKS

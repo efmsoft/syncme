@@ -117,7 +117,9 @@ bool CS::TryAcquire()
 #else
   if (Mutex.try_lock())
   {
-    OwningThread = GetCurrentThreadId(true);
+#ifdef _DEBUG
+    OwningThread = GetCurrentThreadId();
+#endif
     return true;
   }
   return false;
@@ -141,7 +143,7 @@ void CS::Acquire()
       DebugBreak();
     }
     
-    OwningThread = GetCurrentThreadId(true);
+    OwningThread = GetCurrentThreadId();
 
   } while (false);
 #else
@@ -149,7 +151,9 @@ void CS::Acquire()
     EnterCriticalSection(&CriticalSection);
   #else
     Mutex.lock();
+   #ifdef _DEBUG
     OwningThread = GetCurrentThreadId();
+   #endif
   #endif
 #endif
 }
