@@ -50,8 +50,8 @@ Socket::Socket(SocketPair* pair, int handle, bool enableClose)
   , EventsMask(0)
   , EpollMask(0)
 #endif
-  , RxBuffer{}
 {
+  RxBuffer[0] = '\0';
   StartTX = CreateSynchronizationEvent();
 
 #ifdef _WIN32
