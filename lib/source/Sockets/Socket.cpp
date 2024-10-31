@@ -620,6 +620,13 @@ bool Socket::PeerFromHostString(
     }
   }
 
+  if (inet_addr(name) != INADDR_NONE)
+  {
+    Peer.IP = name;
+    Peer.Port = port;
+    return true;
+  }
+
   struct addrinfo hints{};
   hints.ai_family = AF_INET;
   hints.ai_socktype = SOCK_STREAM;
