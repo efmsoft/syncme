@@ -57,7 +57,7 @@ bool Socket::WriteIO(IOStat& stat)
 
     if (n > 0)
     {
-      //LogmeI("sent %zu bytes to %s", size, Pair->WhoAmI(this));
+      LogmeI("sent %zu bytes to %s (%zu)", size, Pair->WhoAmI(this), TxQueue.Size());
       TxQueue.PushFree(b);
 
       stat.Sent += size;
@@ -96,9 +96,8 @@ bool Socket::ReadIO(IOStat& stat)
       stat.Rcv += n;
       stat.RcvPkt++;
 
-      //LogmeI("queued %i bytes from %s", n, Pair->WhoAmI(this));
-
       RxQueue.Append(RxBuffer, n);
+      LogmeI("queued %i bytes from %s (%zu)", n, Pair->WhoAmI(this), RxQueue.Size());
       continue;
     }
 
