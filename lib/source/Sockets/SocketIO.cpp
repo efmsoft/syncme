@@ -74,7 +74,14 @@ bool Socket::WriteIO(IOStat& stat)
 
     if (b->size())
     {
-      LogmeE("failed to send %zu bytes to %s", size, Pair->WhoAmI(this));
+      if (FailLogged == false)
+      {
+        char buffer[256]{};
+        sprintf(buffer, "failed to send %zu bytes to %s", size, Pair->WhoAmI(this));
+        LogIoError("", buffer);
+
+        FailLogged = true;
+      }
       TxQueue.PushFront(b);
     }
     else
