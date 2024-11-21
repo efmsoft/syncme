@@ -67,7 +67,10 @@ bool Socket::WriteIO(IOStat& stat)
     }
 
     if (b->size())
+    {
+      LogmeE("failed to send %zu bytes to %s", size, Pair->WhoAmI(this));
       TxQueue.PushFront(b);
+    }
     else
       TxQueue.PushFree(b);
 
