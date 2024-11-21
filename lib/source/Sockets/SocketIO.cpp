@@ -57,10 +57,10 @@ bool Socket::WriteIO(IOStat& stat)
 
     if (n > 0)
     {
-      LogmeI("sent %zu bytes to %s (%zu)", size, Pair->WhoAmI(this), TxQueue.Size());
+      LogmeI("sent %i bytes from %zu to %s (%zu)", n, size, Pair->WhoAmI(this), TxQueue.Size());
       TxQueue.PushFree(b);
 
-      stat.Sent += size;
+      stat.Sent += n;
       stat.SentPkt++;
 
       continue;
@@ -69,10 +69,19 @@ bool Socket::WriteIO(IOStat& stat)
     if (Peer.Disconnected)
     {
       TxQueue.PushFront(b);
+
+      stat.SendTime += t0.ElapsedSince();
       return false;
     }
 
     if (b->size())
+    {
+      TxQueue.PushFront(b);
+    }
+    else
+      TxQueue.PushFree(b);
+
+    if (n < 0)
     {
       if (FailLogged == false)
       {
@@ -82,13 +91,7 @@ bool Socket::WriteIO(IOStat& stat)
 
         FailLogged = true;
       }
-      TxQueue.PushFront(b);
-    }
-    else
-      TxQueue.PushFree(b);
 
-    if (n < 0)
-    {
       stat.SendTime += t0.ElapsedSince();
       return false;
     }
@@ -112,8 +115,9 @@ bool Socket::ReadIO(IOStat& stat)
       stat.Rcv += n;
       stat.RcvPkt++;
 
-      RxQueue.Append(RxBuffer, n);
-      LogmeI("queued %i bytes from %s (%zu)", n, Pair->WhoAmI(this), RxQueue.Size());
+      size_t qsize = 0;
+      RxQueue.Append(RxBuffer, n, &qsize);
+      LogmeI("queued %i bytes from %s (%zu)", n, Pair->WhoAmI(this), qsize);
       continue;
     }
 

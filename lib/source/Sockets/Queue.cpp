@@ -98,11 +98,14 @@ bool Queue::Append(BufferPtr buffer, size_t* qsize)
   return true;
 }
 
-bool Queue::Insert(const void* p, size_t cb)
+bool Queue::Insert(const void* p, size_t cb, size_t* qsize)
 {
   assert(p);
   assert(cb);
   assert(cb <= BUFFER_SIZE);
+
+  if (qsize)
+    *qsize = Total;
 
   if (Limit != -1 && Total + cb > Limit)
     return false;
@@ -121,6 +124,9 @@ bool Queue::Insert(const void* p, size_t cb)
     Packets.push_front(b);
     Total += cb;
 
+    if (qsize)
+      *qsize = Total;
+
   } while (false);
 
   if (Signal)
@@ -129,11 +135,14 @@ bool Queue::Insert(const void* p, size_t cb)
   return true;
 }
 
-bool Queue::Append(const void* p, size_t cb)
+bool Queue::Append(const void* p, size_t cb, size_t* qsize)
 {
   assert(p);
   assert(cb);
   assert(cb <= BUFFER_SIZE);
+
+  if (qsize)
+    *qsize = Total;
 
   if (Limit != -1 && Total + cb > Limit)
     return false;
@@ -154,7 +163,10 @@ bool Queue::Append(const void* p, size_t cb)
           b->resize(pos + cb);
           memcpy(&(*b)[pos], p, cb);
           Total += cb;
-          
+
+          if (qsize)
+            *qsize = Total;
+
           break;
         }
       }
@@ -171,6 +183,9 @@ bool Queue::Append(const void* p, size_t cb)
 
     Packets.push_back(b);
     Total += cb;
+
+    if (qsize)
+      *qsize = Total;
 
   } while (false);
 

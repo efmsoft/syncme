@@ -40,8 +40,8 @@ namespace Syncme
         SINCMELNK void SetSignallReady(TSignalTxReady signal);
 
         SINCMELNK bool Append(BufferPtr buffer, size_t* qsize = nullptr);
-        SINCMELNK bool Append(const void* p, size_t cb);
-        SINCMELNK bool Insert(const void* p, size_t cb);
+        SINCMELNK bool Append(const void* p, size_t cb, size_t* qsize = nullptr);
+        SINCMELNK bool Insert(const void* p, size_t cb, size_t* qsize = nullptr);
         SINCMELNK bool IsEmpty() const;
         SINCMELNK size_t Size() const;
 
