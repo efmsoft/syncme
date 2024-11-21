@@ -14,8 +14,8 @@ namespace Syncme
   {
     namespace IO
     {
-      constexpr static size_t LIMIT = 64ULL * 1024;
-      constexpr static size_t BUFFER_SIZE = 64ULL * 1024;
+      constexpr static size_t LIMIT = 128ULL * 1024;
+      constexpr static size_t BUFFER_SIZE = 128ULL * 1024;
       constexpr static size_t KEEP_BUFFERS = 4;
 
       typedef std::vector<char> Buffer;
