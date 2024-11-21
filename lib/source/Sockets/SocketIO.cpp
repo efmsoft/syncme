@@ -66,6 +66,12 @@ bool Socket::WriteIO(IOStat& stat)
       continue;
     }
 
+    if (Peer.Disconnected)
+    {
+      TxQueue.PushFront(b);
+      return false;
+    }
+
     if (b->size())
     {
       LogmeE("failed to send %zu bytes to %s", size, Pair->WhoAmI(this));
