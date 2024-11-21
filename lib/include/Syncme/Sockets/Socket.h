@@ -118,7 +118,7 @@ namespace Syncme
     uint32_t EpollMask;
 #endif
 
-    char RxBuffer[Sockets::IO::BUFFER_SIZE];
+    char RxBuffer[2 * Sockets::IO::BUFFER_SIZE];
 
   public:
     SINCMELNK Socket(SocketPair* pair, int handle = -1, bool enableClose = true);
