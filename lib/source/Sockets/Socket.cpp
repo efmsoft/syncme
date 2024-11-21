@@ -50,6 +50,7 @@ Socket::Socket(SocketPair* pair, int handle, bool enableClose)
   , EventsMask(0)
   , EpollMask(0)
 #endif
+  , FailLogged(false)
 {
   RxBuffer[0] = '\0';
   StartTX = CreateSynchronizationEvent();

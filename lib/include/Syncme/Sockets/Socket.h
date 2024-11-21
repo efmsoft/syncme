@@ -97,6 +97,8 @@ namespace Syncme
     Sockets::IO::Queue TxQueue;
     std::mutex IOLock;
 
+    bool FailLogged;
+
 #ifdef _WIN32
     void* WExitEvent;
     void* WStopEvent;
