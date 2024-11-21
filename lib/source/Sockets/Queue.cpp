@@ -70,8 +70,11 @@ BufferPtr Queue::GetBuffer()
   return b;
 }
 
-bool Queue::Append(BufferPtr buffer)
+bool Queue::Append(BufferPtr buffer, size_t* qsize)
 {
+  if (qsize)
+    *qsize = Total;
+
   if (buffer == nullptr)
     return false;
 
@@ -79,11 +82,14 @@ bool Queue::Append(BufferPtr buffer)
   {
     std::lock_guard guard(Lock);
 
-    if (Total + buffer->size() > Limit)
+    if (Limit != -1 && Total + buffer->size() > Limit)
       return false;
 
     Packets.push_back(buffer);
     Total += buffer->size();
+
+    if (qsize)
+      *qsize = Total;
   }
 
   if (Signal)
@@ -98,7 +104,7 @@ bool Queue::Insert(const void* p, size_t cb)
   assert(cb);
   assert(cb <= BUFFER_SIZE);
 
-  if (Total + cb > Limit)
+  if (Limit != -1 && Total + cb > Limit)
     return false;
 
   do
@@ -129,7 +135,7 @@ bool Queue::Append(const void* p, size_t cb)
   assert(cb);
   assert(cb <= BUFFER_SIZE);
 
-  if (Total + cb > Limit)
+  if (Limit != -1 && Total + cb > Limit)
     return false;
 
   do
