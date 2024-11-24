@@ -66,17 +66,9 @@ bool Socket::WriteIO(IOStat& stat)
       continue;
     }
 
-    if (Peer.Disconnected)
-    {
-      TxQueue.PushFront(b);
-
-      stat.SendTime += t0.ElapsedSince();
-      return false;
-    }
-
     if (b->size())
     {
-      TxQueue.PushFront(b);
+      TxQueue.PushFront(b, false);
     }
     else
       TxQueue.PushFree(b);

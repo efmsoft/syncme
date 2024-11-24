@@ -237,7 +237,7 @@ BufferPtr Queue::Join(size_t upto)
   return PopFirst();
 }
 
-void Queue::PushFront(BufferPtr b)
+void Queue::PushFront(BufferPtr b, bool signal)
 {
   if (true)
   {
@@ -247,7 +247,7 @@ void Queue::PushFront(BufferPtr b)
     Total += b->size();
   }
 
-  if (Signal)
+  if (signal && Signal)
     Signal();
 }
 

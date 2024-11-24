@@ -47,7 +47,7 @@ namespace Syncme
 
         SINCMELNK BufferPtr Join(size_t upto = -1);
         SINCMELNK BufferPtr PopFirst();
-        SINCMELNK void PushFront(BufferPtr b);
+        SINCMELNK void PushFront(BufferPtr b, bool signal = true);
 
         SINCMELNK BufferPtr GetBuffer();
         SINCMELNK BufferPtr PopFree();
