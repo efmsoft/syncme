@@ -102,7 +102,7 @@ bool Queue::Insert(const void* p, size_t cb, size_t* qsize)
 {
   assert(p);
   assert(cb);
-  assert(cb <= BUFFER_SIZE);
+  assert(Limit == -1 || cb <= Limit);
 
   if (qsize)
     *qsize = Total;
@@ -139,7 +139,7 @@ bool Queue::Append(const void* p, size_t cb, size_t* qsize)
 {
   assert(p);
   assert(cb);
-  assert(cb <= BUFFER_SIZE);
+  assert(Limit == -1 || cb <= Limit);
 
   if (qsize)
     *qsize = Total;
