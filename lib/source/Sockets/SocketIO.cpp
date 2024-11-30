@@ -42,6 +42,36 @@ bool Socket::Flush(int timeout)
   return IO(timeout, stat, flags);
 }
 
+#if SKTIODEBUG
+void Socket::IoDebug(IOStat& stat, const char* op, int n)
+{
+  char buf[32]{};
+  const char* pbuf = buf;
+
+  auto l = 0;
+  if (op == nullptr)
+  {
+    l = 1;
+    pbuf = "|";
+  }
+  else
+    l = sprintf(buf, "%s:%i", op, n);
+  
+  if (l > 0)
+  {
+    auto s = strlen(stat.History);
+    if (s && s < sizeof(stat.History))
+    {
+      stat.History[s] = ' ';
+      s++;
+    }
+
+    if (s + l < sizeof(stat.History))
+      memcpy(&stat.History[s], pbuf, size_t(l) + 1);
+  }
+}
+#endif
+
 bool Socket::WriteIO(IOStat& stat)
 {
   TimePoint t0;
@@ -54,6 +84,7 @@ bool Socket::WriteIO(IOStat& stat)
 
     size_t size = b->size();
     int n = InternalWrite(b->data(), size, 0);
+    IODEBUG("tx", n);
 
     if (n > 0)
     {
@@ -109,6 +140,8 @@ bool Socket::ReadIO(IOStat& stat)
   for (;;)
   {
     int n = InternalRead(RxBuffer, Sockets::IO::BUFFER_SIZE, 0);
+    IODEBUG("rx", n);
+
     if (n > 0)
     {
       stat.Rcv += n;

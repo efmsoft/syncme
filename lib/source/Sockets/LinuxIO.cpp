@@ -99,7 +99,7 @@ WAIT_RESULT Socket::FastWaitForMultipleObjects(int timeout, IOStat& stat)
       return WAIT_RESULT::FAILED;
     }
 
-    stat.Interrupts++;
+    stat.Cycles++;
   }
 
   result = WAIT_RESULT::TIMEOUT;
@@ -198,6 +198,8 @@ bool Socket::IO(int timeout, IOStat& stat, IOFlags flags)
       SKT_SET_LAST_ERROR(TIMEOUT);
       break;
     }
+    
+    IODEBUG(nullptr, 0);
 
     TimePoint t0;
     auto rc = FastWaitForMultipleObjects(timeout, stat);

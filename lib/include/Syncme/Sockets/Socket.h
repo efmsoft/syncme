@@ -20,6 +20,8 @@
 #define SKTEPOLL 0
 #endif
 
+#define SKTIODEBUG 1
+
 namespace Syncme
 {
   struct SocketPair;
@@ -50,7 +52,11 @@ namespace Syncme
     size_t Wait;
     uint64_t WaitTime;
 
-    uint64_t Interrupts;
+    uint64_t Cycles;
+
+#if SKTIODEBUG
+    char History[4096];
+#endif
   };
 
   union IOFlags
@@ -190,6 +196,10 @@ namespace Syncme
     void SignallWindowsEvent(void* h, uint32_t cookie, bool failed);
 #endif
 
+#if SKTIODEBUG
+    void IoDebug(IOStat& stat, const char* op, int n);
+#endif
+
     int ReadPacket(void* buffer, size_t size);
     static uint32_t CalculateTimeout(int timeout, uint64_t start, bool& expired);
 
@@ -213,3 +223,9 @@ namespace Syncme
 
 #define SKT_SET_LAST_ERROR2(e) \
   SetLastError(e, __FILE__, __LINE__) 
+
+#if SKTIODEBUG
+#define IODEBUG(op, n) IoDebug(stat, op, int(n))
+#else
+#define IODEBUG(...)
+#endif

@@ -106,6 +106,8 @@ bool Socket::IO(int timeout, IOStat& stat, IOFlags flags)
 
   for (bool expired = false;;)
   {
+    stat.Cycles++;
+
     // If peer is disconnected, write will fail
     // We socked still can contain data to read
     if (Peer.Disconnected == false)
@@ -145,6 +147,8 @@ bool Socket::IO(int timeout, IOStat& stat, IOFlags flags)
       SKT_SET_LAST_ERROR(TIMEOUT);
       break;
     }
+
+    IODEBUG(nullptr, 0);
 
     TimePoint t0;
     auto rc = ::WaitForMultipleObjects(5, object, false, timeout);
