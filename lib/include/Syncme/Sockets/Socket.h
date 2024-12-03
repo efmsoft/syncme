@@ -209,7 +209,9 @@ namespace Syncme
   typedef std::shared_ptr<Socket> SocketPtr;
 }
 
+#ifdef _WIN32
 extern "C" SINCMELNK void __stdcall SetBeforeCloseSocketCallback(void* hook);
+#endif
 
 #define RX_TIMEOUT(n) \
   ((n) == 0 && GetLastError() == SKT_ERROR::TIMEOUT) 
