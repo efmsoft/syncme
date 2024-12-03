@@ -45,3 +45,8 @@ int Syncme::GetSocketEvents(HEvent socketEvent)
   SocketEvent* p = (SocketEvent*)socketEvent.get();
   return p->GetEvents();
 }
+
+extern "C" SINCMELNK void __stdcall SetBeforeCloseSocketCallback(void* hook)
+{
+  // Do nothing. We use it only for communicating with IAgentX hook
+}
