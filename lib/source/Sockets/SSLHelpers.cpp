@@ -345,11 +345,14 @@ std::string Syncme::GetBioError()
 #if defined(USE_LOGME) && defined(_WIN32)
   if (errorString.empty())
   {
-    
     errorString = LRESULT_STR(e);
-    errorString += " (errno: ";
-    errorString += ERRNO_STR(en);
-    errorString += ")";
+    
+    if (en)
+    {
+      errorString += " (errno: ";
+      errorString += ERRNO_STR(en);
+      errorString += ")";
+    }
   }
 #endif    
 

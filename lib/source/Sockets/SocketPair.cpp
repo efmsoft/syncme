@@ -100,16 +100,18 @@ void SocketPair::Close()
   ClosePending = true;
   SetEvent(CloseEvent);
 
-  if (Client)
+  auto client = Client;
+  if (client)
   {
     LogI("Closing client socket");
-    Client->Close();
+    client->Close();
   }
 
-  if (Server)
+  auto server = Server;
+  if (server)
   {
     LogI("Closing server socket");
-    Server->Close();
+    server->Close();
   }
 }
 

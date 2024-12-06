@@ -1,4 +1,5 @@
 #include <cassert>
+#include <openssl/err.h>
 
 #include <Syncme/Logger/Log.h>
 #include <Syncme/Sockets/SocketPair.h>
@@ -168,6 +169,7 @@ int SSLSocket::ReadPending(void* buffer, size_t size, int i)
 int SSLSocket::InternalWrite(const void* buffer, size_t size, int timeout)
 {
   std::lock_guard<std::mutex> guard(SslLock);
+  ERR_clear_error();
 
   int n = SSL_write(Ssl, buffer, int(size));
   return TranslateSSLError(n, "SSL_write");
@@ -182,6 +184,7 @@ int SSLSocket::InternalRead(void* buffer, size_t size, int timeout)
     return n;
 
   std::lock_guard<std::mutex> guard(SslLock);
+  ERR_clear_error();
 
   n = SSL_read(Ssl, buffer, int(size));
   return TranslateSSLError(n, "SSL_read");
@@ -240,7 +243,8 @@ SKT_ERROR SSLSocket::Ossl2SktError(int ret) const
 
 void SSLSocket::LogIoError(const char* fn, const char* text)
 {
-  if (Pair->Closing() || LastError == SKT_ERROR::GRACEFUL_DISCONNECT)
+  const SocketError e = GetLastError();
+  if (Pair->Closing() || e == SKT_ERROR::GRACEFUL_DISCONNECT)
     return;
 
 #ifdef USE_LOGME
@@ -251,7 +255,7 @@ void SSLSocket::LogIoError(const char* fn, const char* text)
     , "%s%s. Error: %s"
     , fn 
     , text
-    , GetLastError().Format().c_str()
+    , e.Format().c_str()
   );
 #endif
 }

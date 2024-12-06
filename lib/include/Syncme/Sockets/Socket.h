@@ -1,10 +1,13 @@
 #pragma once
 
+#include <stdint.h>
+
 #include <map>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <vector>
+#include <unordered_map>
 
 #include <Syncme/Api.h>
 #include <Syncme/CritSection.h>
@@ -90,7 +93,8 @@ namespace Syncme
     std::string AcceptIP;
     int AcceptPort;
 
-    SocketError LastError;
+    std::mutex ErrorLock;
+    std::unordered_map<uint64_t, SocketError> LastError;
 
     typedef std::vector<char> Packet;
     typedef std::shared_ptr<Packet> PacketPtr;
@@ -164,7 +168,7 @@ namespace Syncme
     );
 
     SINCMELNK void SetLastError(SKT_ERROR e, const char* file, int line);
-    SINCMELNK const SocketError& GetLastError() const;
+    SINCMELNK SocketError GetLastError() const;
 
     SINCMELNK virtual bool SetOptions();
     SINCMELNK virtual bool SwitchToUnblockingMode();
@@ -211,6 +215,15 @@ namespace Syncme
 
 #ifdef _WIN32
 extern "C" SINCMELNK void __stdcall SetBeforeCloseSocketCallback(void* hook);
+extern "C" SINCMELNK void __stdcall SetBeforeShutdownSocketCallback(void* hook);
+extern "C" SINCMELNK void __stdcall SetAfterRecvCallback(void* hook);
+extern "C" SINCMELNK void __stdcall SetAfterRecvFromCallback(void* hook);
+extern "C" SINCMELNK void __stdcall SetAfterSendCallback(void* hook);
+extern "C" SINCMELNK void __stdcall SetAfterSendToCallback(void* hook);
+extern "C" SINCMELNK void __stdcall SetAfterSocketCallback(void* hook);
+extern "C" SINCMELNK void __stdcall SetAfterWSASocketACallback(void* hook);
+extern "C" SINCMELNK void __stdcall SetAfterSetSockOptCallback(void* hook);
+extern "C" SINCMELNK void __stdcall SetAfterConnectCallback(void* hook);
 #endif
 
 #define RX_TIMEOUT(n) \

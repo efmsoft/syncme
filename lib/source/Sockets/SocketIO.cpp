@@ -32,7 +32,7 @@ uint32_t Socket::CalculateTimeout(int timeout, uint64_t start, bool& expired)
 
 bool Socket::Flush(int timeout)
 {
-  if (Handle == -1)
+  if (Handle == -1 || TxQueue.IsEmpty())
     return false;
 
   IOFlags flags{};

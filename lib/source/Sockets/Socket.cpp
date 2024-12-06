@@ -163,12 +163,18 @@ Socket::~Socket()
 
 void Socket::SetLastError(SKT_ERROR e, const char* file, int line)
 {
-  LastError.Set(e, file, line);
+  SocketError error(e, file, line);
+  LastError[GetCurrentProcessId()] = error;
 }
 
-const SocketError& Socket::GetLastError() const
+SocketError Socket::GetLastError() const
 {
-  return LastError;
+  auto id = GetCurrentProcessId();
+  auto it = LastError.find(id);
+  if (it == LastError.end())
+    return SocketError();
+
+  return it->second;
 }
 
 std::string Socket::GetProtocol() const
@@ -276,8 +282,6 @@ bool Socket::Attach(int socket, bool enableClose)
 
 void Socket::Close()
 {
-  Flush();
-
   bool callClose = false;
   int socket = Detach(&callClose);
 
