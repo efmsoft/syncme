@@ -2,6 +2,7 @@
 
 #include <Syncme/Event/Event.h>
 #include <Syncme/Logger/Log.h>
+#include <Syncme/ProcessThreadId.h>
 #include <Syncme/Sleep.h>
 #include <Syncme/Sockets/API.h>
 #include <Syncme/Sockets/Socket.h>
@@ -164,12 +165,12 @@ Socket::~Socket()
 void Socket::SetLastError(SKT_ERROR e, const char* file, int line)
 {
   SocketError error(e, file, line);
-  LastError[GetCurrentProcessId()] = error;
+  LastError[Syncme::GetCurrentProcessId()] = error;
 }
 
 SocketError Socket::GetLastError() const
 {
-  auto id = GetCurrentProcessId();
+  auto id = Syncme::GetCurrentProcessId();
   auto it = LastError.find(id);
   if (it == LastError.end())
     return SocketError();
