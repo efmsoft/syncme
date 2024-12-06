@@ -67,7 +67,10 @@ void Socket::IoDebug(IOStat& stat, const char* op, int n)
     }
 
     if (s + l < sizeof(stat.History) - 1)
+    {
       memcpy(&stat.History[s], pbuf, size_t(l) + 1);
+      s += l;
+    }
 
     stat.History[s] = '\0';
   }
