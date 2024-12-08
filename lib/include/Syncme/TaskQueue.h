@@ -35,8 +35,8 @@ namespace Syncme
       SINCMELNK void Invoke();
       SINCMELNK void Cancel();
 
+      SINCMELNK void WaitForCompletion() const;
     private:
-      void WaitForCompletion() const;
       static void DefaultCallback(void* context);
     };
 
