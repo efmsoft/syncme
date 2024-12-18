@@ -165,12 +165,12 @@ Socket::~Socket()
 void Socket::SetLastError(SKT_ERROR e, const char* file, int line)
 {
   SocketError error(e, file, line);
-  LastError[Syncme::GetCurrentProcessId()] = error;
+  LastError[Syncme::GetCurrentThreadId()] = error;
 }
 
 SocketError Socket::GetLastError() const
 {
-  auto id = Syncme::GetCurrentProcessId();
+  auto id = Syncme::GetCurrentThreadId();
   auto it = LastError.find(id);
   if (it == LastError.end())
     return SocketError();

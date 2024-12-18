@@ -25,7 +25,8 @@ uint64_t Syncme::GetCurrentThreadId()
 
 uint64_t Syncme::GetCurrentProcessId()
 {
-  return getpid();
+  uint64_t pid = getpid();
+  return pid;
 }
 
 uint64_t Syncme::GetCurrentPThread()
