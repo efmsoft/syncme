@@ -125,6 +125,11 @@ SocketPtr SocketPair::CreateSSLSocket(SSL* ssl)
   return std::make_shared<SSLSocket>(this, ssl);
 }
 
+const char* SocketPair::WhoAmI(SocketPtr socket) const
+{
+  return WhoAmI(socket.get());
+}
+
 const char* SocketPair::WhoAmI(Socket* socket) const
 {
   if (socket == Client.get())
@@ -157,14 +162,14 @@ int SocketPair::IO(
     return -1;
   }
 
-  auto b = Client->RxQueue.Join(size);
+  auto b = socket->RxQueue.Join(size);
   if (b != nullptr)
   {
     memcpy(buffer, b->data(), b->size());
     int n = int(b->size());
 
-    Client->RxQueue.PushFree(b);
-    from = Client;
+    socket->RxQueue.PushFree(b);
+    from = socket;
     return n;
   }
 
@@ -185,10 +190,10 @@ int SocketPair::Read(void* buffer, size_t size, SocketPtr& from, int timeout)
   if (!serverValid && !clientValid)
     return -1;
 
-  if (clientValid)
+  if (clientValid && !serverValid)
     return IO(Client, buffer, size, from, timeout);
 
-  if (serverValid)
+  if (serverValid && !clientValid)
     return IO(Server, buffer, size, from, timeout);
  
   EventArray events(
@@ -202,11 +207,11 @@ int SocketPair::Read(void* buffer, size_t size, SocketPtr& from, int timeout)
 
   for (int loops = 0;; ++loops)
   {
-    n = IO(Client, buffer, size, from, timeout);
+    n = IO(Client, buffer, size, from, 0);
     if (n != 0)
       return n;
 
-    n = IO(Server, buffer, size, from, timeout);
+    n = IO(Server, buffer, size, from, 0);
     if (n != 0)
       return n;
 
@@ -276,7 +281,7 @@ int SocketPair::Read(void* buffer, size_t size, SocketPtr& from, int timeout)
       socket->Peer.When = GetTimeInMillisec();
       timeout = 0;
 
-      LogW("%s: peer disconnected", WhoAmI(socket.get()));
+      LogW("%s: peer disconnected", WhoAmI(socket));
 
       // We have to drain input buffer before closing socket
     }

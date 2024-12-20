@@ -48,6 +48,7 @@ namespace Syncme
     SINCMELNK SocketPtr CreateBIOSocket();
     SINCMELNK SocketPtr CreateSSLSocket(SSL* ssl);
 
+    SINCMELNK const char* WhoAmI(SocketPtr socket) const;
     SINCMELNK const char* WhoAmI(Socket* socket) const;
 
     SINCMELNK int Read(std::vector<char>& buffer, SocketPtr& from, int timeout = FOREVER);
