@@ -66,38 +66,42 @@ void Syncme::Implementation::WaitManager::RemoveSocketEvent(SocketEvent* e)
   }
 }
 #else
+
+#include <poll.h>
+
 void Syncme::Implementation::WaitManager::AddSocketEvent(SocketEvent* e)
 {
-  fd_set read{}, write{};
+  struct pollfd pfd {};
+  pfd.fd = e->Socket;
+  pfd.revents = 0;
+  pfd.events = 0;
 
-  FD_ZERO(&read);
-  FD_SET(0, &read);
-
-  FD_ZERO(&write);
-  FD_SET(0, &write);
-
-  fd_set* r = nullptr;
   if (e->EventMask & EVENT_READ)
-    r = &read;
+    pfd.events |= POLLIN;
 
-  fd_set* w = nullptr;
   if (e->EventMask & EVENT_WRITE)
-    w = &write;
+    pfd.events |= POLLOUT;
 
-  struct timeval tv{};
+  if (e->EventMask & EVENT_CLOSE)
+    pfd.events |= POLLHUP;
+
+  struct timeval tv {};
   tv.tv_sec = 0;
   tv.tv_usec = 0;
 
-  int rc = select(e->Socket, r, w, nullptr, &tv);
+  int rc = poll(&pfd, 1, 0);
   if (rc > 0)
   {
     int events = 0;
 
-    if (FD_ISSET(e->Socket, &read))
+    if (pfd.revents & POLLIN)
       events |= EVENT_READ;
-      
-    if (FD_ISSET(e->Socket, &write))
+
+    if (pfd.revents & POLLOUT)
       events |= EVENT_WRITE;
+
+    if (pfd.revents & POLLHUP)
+      events |= EVENT_CLOSE;
 
     if (events)
     {
