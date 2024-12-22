@@ -215,6 +215,13 @@ int SocketPair::Read(void* buffer, size_t size, SocketPtr& from, int timeout)
     if (n != 0)
       return n;
 
+    if (Client->Peer.Disconnected || Server->Peer.Disconnected)
+    {
+      Server->SKT_SET_LAST_ERROR(GRACEFUL_DISCONNECT);
+      Client->SKT_SET_LAST_ERROR(GRACEFUL_DISCONNECT);
+      return -1;
+    }
+
     auto t = GetTimeInMillisec();
     uint32_t milliseconds = FOREVER;
 
