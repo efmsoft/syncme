@@ -6,10 +6,10 @@
 
 using namespace Syncme::Implementation;
 
-HEvent Syncme::CreateSocketEvent(int socket, int eventMask)
+HEvent Syncme::CreateSocketEvent(int socket, int eventMask, void* queue)
 {
   HEvent event = std::shared_ptr<Event>(
-    new SocketEvent(socket, eventMask)
+    new SocketEvent(socket, eventMask, (Sockets::IO::Queue*)queue)
     , Syncme::EventDeleter()
   );
 

@@ -486,7 +486,7 @@ bool Socket::SwitchToUnblockingMode()
 
   if (RxEvent == nullptr)
   {
-    RxEvent = CreateSocketEvent(Handle, EVENT_READ | EVENT_WRITE | EVENT_CLOSE);
+    RxEvent = CreateSocketEvent(Handle, EVENT_READ | EVENT_WRITE | EVENT_CLOSE, &TxQueue);
     if (RxEvent == nullptr)
     {
       LogE("CreateSocketEvent failed");

@@ -11,6 +11,8 @@
 #include <Syncme/Event/Event.h>
 #include <Syncme/Sync.h>
 
+#include <Syncme/Sockets/Queue.h>
+
 namespace Syncme
 {
   namespace Implementation
@@ -31,8 +33,10 @@ namespace Syncme
       bool Closed;
 #endif
 
+      Sockets::IO::Queue* TxQueue;
+
     public:
-      SINCMELNK SocketEvent(int socket, int mask);
+      SINCMELNK SocketEvent(int socket, int mask, Sockets::IO::Queue* txQueue = nullptr);
       SINCMELNK ~SocketEvent();
 
       SINCMELNK int GetEvents();
@@ -44,6 +48,8 @@ namespace Syncme
       SINCMELNK bool UnregisterWait(uint32_t cookie) override;
       SINCMELNK uint32_t Signature() const override;
       SINCMELNK static bool IsSocketEvent(HEvent h);
+
+      SINCMELNK bool ExpectWrite() const;
 
 #ifndef _WIN32
       SINCMELNK epoll_event GetPollEvent() const;

@@ -52,7 +52,7 @@ namespace Syncme
     protected:
       friend struct SocketEvent;
       friend void Syncme::Implementation::WaitManager::AddSocketEvent(SocketEvent* e);
-      friend HEvent Syncme::CreateSocketEvent(int socket, int eventMask);
+      friend HEvent Syncme::CreateSocketEvent(int socket, int eventMask, void* queue);
       static SocketEventQueuePtr& Ptr();
 
     private:

@@ -79,7 +79,7 @@ void Syncme::Implementation::WaitManager::AddSocketEvent(SocketEvent* e)
   if (e->EventMask & EVENT_READ)
     pfd.events |= POLLIN;
 
-  if (e->EventMask & EVENT_WRITE)
+  if (e->ExpectWrite() && (e->EventMask & EVENT_WRITE))
     pfd.events |= POLLOUT;
 
   if (e->EventMask & EVENT_CLOSE)

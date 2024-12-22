@@ -32,7 +32,7 @@ namespace Syncme
   constexpr static int EVENT_READ = 1;
   constexpr static int EVENT_WRITE = 2;
   constexpr static int EVENT_CLOSE = 4;
-  SINCMELNK HEvent CreateSocketEvent(int socket, int eventMask);
+  SINCMELNK HEvent CreateSocketEvent(int socket, int eventMask, void* queue = nullptr);
   SINCMELNK int GetSocketEvents(HEvent socketEvent);
 }
 

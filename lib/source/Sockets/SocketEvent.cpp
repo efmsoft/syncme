@@ -15,7 +15,7 @@ using namespace Syncme::Implementation;
 std::atomic<uint64_t> Syncme::SocketEventObjects{};
 uint64_t Syncme::GetSocketEventObjects() {return Syncme::SocketEventObjects;}
 
-SocketEvent::SocketEvent(int socket, int mask)
+SocketEvent::SocketEvent(int socket, int mask, Sockets::IO::Queue* txQueue)
   : Event(false)
   , Socket(socket)
   , EventMask(mask)
@@ -25,6 +25,7 @@ SocketEvent::SocketEvent(int socket, int mask)
 #else
   , Closed(false)
 #endif
+  , TxQueue(txQueue)
 {
   assert(socket != -1);
 
@@ -142,7 +143,7 @@ epoll_event SocketEvent::GetPollEvent() const
   if (EventMask & EVENT_READ)
     ev.events |= EPOLLIN;
 
-  if (EventMask & EVENT_WRITE)
+  if (ExpectWrite() && (EventMask & EVENT_WRITE))
     ev.events |= EPOLLOUT;
 
   if (EventMask & EVENT_CLOSE)
@@ -226,6 +227,11 @@ bool SocketEvent::IsSocketEvent(HEvent h)
     return false;
 
   return h->Signature() == SIGNATURE;
+}
+
+bool SocketEvent::ExpectWrite() const
+{
+  return TxQueue ? TxQueue->IsEmpty() == false : false;
 }
 
 void SocketEvent::FireEvents(int events)
