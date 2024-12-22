@@ -85,10 +85,6 @@ void Syncme::Implementation::WaitManager::AddSocketEvent(SocketEvent* e)
   if (e->EventMask & EVENT_CLOSE)
     pfd.events |= POLLHUP;
 
-  struct timeval tv {};
-  tv.tv_sec = 0;
-  tv.tv_usec = 0;
-
   int rc = poll(&pfd, 1, 0);
   if (rc > 0)
   {
