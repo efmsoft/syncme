@@ -135,7 +135,7 @@ bool Socket::IO(int timeout, IOStat& stat, IOFlags flags)
     }
 
     // Return immediatelly if we read at least one packet
-    if (RxQueue.IsEmpty() == false)
+    if (RxQueue.IsEmpty() == false && flags.f.ForceWait != true)
       return true;
 
     if (flags.f.Flush && TxQueue.IsEmpty())

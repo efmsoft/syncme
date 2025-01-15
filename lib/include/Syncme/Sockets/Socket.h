@@ -68,7 +68,8 @@ namespace Syncme
     struct
     {
       uint32_t Flush : 1;
-      uint32_t : 31;
+      uint32_t ForceWait : 1;
+      uint32_t : 30;
     } f;
   };
 
