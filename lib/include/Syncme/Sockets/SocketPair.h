@@ -13,7 +13,6 @@
 
 namespace Syncme
 {
-  constexpr const size_t BUFFER_SIZE = 64 * 1024; // 64K
   constexpr const int READ_REQUEST_TIMEOUT = 30000;
 
   struct SocketPair

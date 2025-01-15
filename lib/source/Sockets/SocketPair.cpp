@@ -165,6 +165,12 @@ int SocketPair::IO(
   auto b = socket->RxQueue.Join(size);
   if (b != nullptr)
   {
+    if (b->size() > size)
+    {
+      assert(!"buffer size have to be Sockets::IO::BUFFER_SIZE or greater");
+      return -1;
+    }
+
     memcpy(buffer, b->data(), b->size());
     int n = int(b->size());
 
