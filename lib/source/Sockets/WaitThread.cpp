@@ -18,7 +18,8 @@ static DWORD WINAPI ThreadStartup(void* p)
 }
 
 WaitThread::WaitThread()
-  : ID(0)
+  : EmptySince(0)
+  , ID(0)
   , Thread(nullptr)
   , EvExit(nullptr)
   , EvRestart(nullptr)
@@ -84,6 +85,16 @@ bool WaitThread::Empty()
   return Events.empty();
 }
 
+unsigned WaitThread::TicksSinceEmpty()
+{
+  auto lock = DataLock.Lock();
+
+  if (Events.empty() == false)
+    return 0;
+
+  return GetTickCount64() - EmptySince;
+}
+
 bool WaitThread::Add(SocketEvent* object)
 {
   if (true)
@@ -135,6 +146,10 @@ bool WaitThread::RemoveInternal(SocketEvent* object)
     if (object == e)
     {
       Events.erase(it);
+      
+      if (Events.empty())
+        EmptySince = GetTickCount64();
+
       return true;
     }
   }
