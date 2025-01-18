@@ -14,8 +14,21 @@ using namespace Syncme::Implementation;
 
 static CS DataLock;
 static std::list<WaitThreadPtr> Threads;
+static uint64_t MaxIdle = 3000;
 
 ON_SYNCME_UNINITIALIZE(&Syncme::Implementation::WaitManager::Uninitialize)
+
+static void InternalStopIdleThreads()
+{
+  for (auto it = Threads.begin(); it != Threads.end();)
+  {
+    auto& t = *it;
+    if (t->Empty() && t->TicksSinceEmpty() >= MaxIdle)
+      it = Threads.erase(it);
+    else
+      ++it;
+  }
+}
 
 void Syncme::Implementation::WaitManager::Uninitialize()
 {
@@ -42,7 +55,7 @@ void Syncme::Implementation::WaitManager::AddSocketEvent(SocketEvent* e)
     return;
 
   if (t->Add(e))
-    Threads.push_back(t);
+    Threads.push_front(t);
 }
 
 void Syncme::Implementation::WaitManager::RemoveSocketEvent(SocketEvent* e)
@@ -51,19 +64,18 @@ void Syncme::Implementation::WaitManager::RemoveSocketEvent(SocketEvent* e)
 
   for (auto it = Threads.begin(); it != Threads.end(); ++it)
   {
-    auto& t = *it;
+    WaitThreadPtr t = *it;
 
     if (!t->Remove(e))
       continue;
 
-    if (t->Empty())
-    {
-      t->Stop();
-      Threads.erase(it);
-    }
+    Threads.erase(it);
+    Threads.push_front(t);
 
     break;
   }
+
+  InternalStopIdleThreads();
 }
 #else
 

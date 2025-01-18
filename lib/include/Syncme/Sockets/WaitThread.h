@@ -2,6 +2,7 @@
 
 #include <list>
 #include <memory>
+#include <stdint.h>
 
 #include <Syncme/Api.h>
 #include <Syncme/CritSection.h>
@@ -17,6 +18,7 @@ namespace Syncme
     {
       CS DataLock;
       std::list<SocketEvent*> Events;
+      uint64_t EmptySince;
 
       unsigned long ID;
       void* Thread;
@@ -34,6 +36,7 @@ namespace Syncme
       SINCMELNK bool Run();
       SINCMELNK void Stop();
       SINCMELNK bool Empty();
+      SINCMELNK unsigned TicksSinceEmpty();
 
       SINCMELNK void Worker();
 
