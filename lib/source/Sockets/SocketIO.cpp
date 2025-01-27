@@ -176,6 +176,11 @@ bool Socket::StopPendingRead()
   return SetEvent(BreakRead);
 }
 
+bool Socket::ResetPendingRead()
+{
+  return ResetEvent(BreakRead);
+}
+
 int Socket::Read(void* buffer, size_t size, int timeout)
 {
   IOStat stat{};

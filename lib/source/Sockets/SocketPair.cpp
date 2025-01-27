@@ -141,11 +141,19 @@ const char* SocketPair::WhoAmI(Socket* socket) const
   return "nobody";
 }
 
+void SocketPair::ResetPendingRead()
+{
+  if (Client)
+    Client->ResetPendingRead();
+
+  if (Server)
+    Server->ResetPendingRead();
+}
+
 int SocketPair::Read(std::vector<char>& buffer, SocketPtr& from, int timeout)
 {
   return Read(&buffer[0], buffer.size(), from, timeout);
 }
-
 
 int SocketPair::IO(
   SocketPtr socket
@@ -253,6 +261,8 @@ int SocketPair::Read(void* buffer, size_t size, SocketPtr& from, int timeout)
 
     if (rc == WAIT_RESULT::OBJECT_3)
     {
+      Server->ResetPendingRead();
+
       LogI("Break server read");
       Server->SKT_SET_LAST_ERROR(NONE);
       return 0;
@@ -260,6 +270,8 @@ int SocketPair::Read(void* buffer, size_t size, SocketPtr& from, int timeout)
 
     if (rc == WAIT_RESULT::OBJECT_5)
     {
+      Client->ResetPendingRead();
+
       LogI("Break client read");
       Client->SKT_SET_LAST_ERROR(NONE);
       return 0;

@@ -140,6 +140,7 @@ namespace Syncme
     SINCMELNK virtual void Close();
     SINCMELNK virtual bool Configure();
     SINCMELNK virtual bool StopPendingRead();
+    SINCMELNK virtual bool ResetPendingRead();
     SINCMELNK virtual void Shutdown() = 0;
     SINCMELNK virtual void Unread(const char* p, size_t n);
     
