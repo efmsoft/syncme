@@ -215,21 +215,6 @@ namespace Syncme
   typedef std::shared_ptr<Socket> SocketPtr;
 }
 
-#ifdef _WIN32
-extern "C" SINCMELNK void __stdcall SetBeforeCloseSocketCallback(void* hook);
-extern "C" SINCMELNK void __stdcall SetBeforeShutdownSocketCallback(void* hook);
-extern "C" SINCMELNK void __stdcall SetAfterRecvCallback(void* hook);
-extern "C" SINCMELNK void __stdcall SetAfterRecvFromCallback(void* hook);
-extern "C" SINCMELNK void __stdcall SetAfterSendCallback(void* hook);
-extern "C" SINCMELNK void __stdcall SetAfterSendToCallback(void* hook);
-extern "C" SINCMELNK void __stdcall SetAfterSocketCallback(void* hook);
-extern "C" SINCMELNK void __stdcall SetAfterSetSockOptCallback(void* hook);
-extern "C" SINCMELNK void __stdcall SetAfterIoctlSocketCallback(void* hook);
-extern "C" SINCMELNK void __stdcall SetBeforeIoctlSocketCallback(void* hook);
-extern "C" SINCMELNK void __stdcall SetAfterConnectCallback(void* hook);
-extern "C" SINCMELNK void __stdcall SetAfterAcceptCallback(void* hook);
-#endif
-
 #define RX_TIMEOUT(n) \
   ((n) == 0 && GetLastError() == SKT_ERROR::TIMEOUT) 
 
