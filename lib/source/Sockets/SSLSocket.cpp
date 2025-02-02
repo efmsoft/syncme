@@ -192,7 +192,7 @@ int SSLSocket::InternalRead(void* buffer, size_t size, int timeout)
 
 int SSLSocket::TranslateSSLError(int n, const char* method)
 {
-  if (n >= 0)
+  if (n > 0)
   {
     SKT_SET_LAST_ERROR(NONE);
     return n;
@@ -208,7 +208,7 @@ int SSLSocket::TranslateSSLError(int n, const char* method)
   LogE("%s returned error %s: %s", method, SslError(e).c_str(), GetBioError().c_str());
 
   CloseNotify = false;
-  return n;
+  return -1;
 }
 
 SKT_ERROR SSLSocket::Ossl2SktError(int ret) const
@@ -217,8 +217,10 @@ SKT_ERROR SSLSocket::Ossl2SktError(int ret) const
   switch (err)
   {
   case SSL_ERROR_NONE:
-  case SSL_ERROR_ZERO_RETURN:
     return SKT_ERROR::NONE;
+
+  case SSL_ERROR_ZERO_RETURN:
+    return SKT_ERROR::GRACEFUL_DISCONNECT;
 
   case SSL_ERROR_WANT_WRITE:
   case SSL_ERROR_WANT_READ:
