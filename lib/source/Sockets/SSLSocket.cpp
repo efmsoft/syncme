@@ -205,7 +205,8 @@ int SSLSocket::TranslateSSLError(int n, const char* method)
     return 0;
 
   int e = SSL_get_error(Ssl, n);
-  LogE("%s returned error %s: %s", method, SslError(e).c_str(), GetBioError().c_str());
+  if (e != SKT_ERROR::GRACEFUL_DISCONNECT)
+    LogE("%s returned error %s: %s", method, SslError(e).c_str(), GetBioError().c_str());
 
   CloseNotify = false;
   return -1;
