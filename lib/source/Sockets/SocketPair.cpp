@@ -1,6 +1,7 @@
 #include <cassert>
 
 #include <Syncme/Logger/Log.h>
+#include <Syncme/Sleep.h>
 #include <Syncme/Sockets/BIOSocket.h>
 #include <Syncme/Sockets/SocketPair.h>
 #include <Syncme/Sockets/SSLSocket.h>
@@ -219,15 +220,20 @@ int SocketPair::Read(void* buffer, size_t size, SocketPtr& from, int timeout)
     , Client->BreakRead
   );
 
-  for (int loops = 0;; ++loops)
+  for (int loops = 0, zeroCnt = 0;; ++loops)
   {
     n = IO(Client, buffer, size, from, 0);
     if (n != 0)
+    {
       return n;
+    }
 
     n = IO(Server, buffer, size, from, 0);
     if (n != 0)
+    {
       return n;
+    }
+    zeroCnt++;
 
     if (Client->Peer.Disconnected || Server->Peer.Disconnected)
     {
@@ -286,7 +292,7 @@ int SocketPair::Read(void* buffer, size_t size, SocketPtr& from, int timeout)
         Client->SKT_SET_LAST_ERROR2(Client->Peer.Disconnected ? SKT_ERROR::GRACEFUL_DISCONNECT : SKT_ERROR::TIMEOUT);
         return 0;
       }
-
+      zeroCnt = 0;
       continue;
     }
 
@@ -309,6 +315,18 @@ int SocketPair::Read(void* buffer, size_t size, SocketPtr& from, int timeout)
       LogW("%s: peer disconnected", WhoAmI(socket));
 
       // We have to drain input buffer before closing socket
+    }
+    // Workaround strange pattern - SSLread returns 0, but SSL_ERROR_ZERO_RETURN is not set.
+    // Here we just slow down requests to avoid high CPU load produced ininite empty cycles.
+    // IO will be stopped after some timeout, typically 30 sec.
+    if (zeroCnt >= 5)
+    {
+      // Send a couple messages to log to indicate the problem
+      if (zeroCnt == 5 || zeroCnt == 6)
+      {
+        LogI("%s: fd=%d start 'sleep' mode, zero 'read' counter %d, rc %d", WhoAmI(socket), socket->Handle, zeroCnt, rc);
+      }
+      Sleep(50);
     }
   }
 
