@@ -319,10 +319,13 @@ int SocketPair::Read(void* buffer, size_t size, SocketPtr& from, int timeout)
     // Workaround strange pattern - SSLread returns 0, but SSL_ERROR_ZERO_RETURN is not set.
     // Here we just slow down requests to avoid high CPU load produced ininite empty cycles.
     // IO will be stopped after some timeout, typically 30 sec.
-    // Send a couple messages to log to indicate the problem
-    if (zeroCnt == 5 || zeroCnt == 6)
+    if (zeroCnt >= 5)
     {
-      LogI("%s: fd=%d start 'sleep' mode, zero 'read' counter %d, rc %d", WhoAmI(socket), socket->Handle, zeroCnt, rc);
+      // Send a couple messages to log to indicate the problem
+      if (zeroCnt == 5 || zeroCnt == 6)
+      {
+        LogI("%s: fd=%d start 'sleep' mode, zero 'read' counter %d, rc %d", WhoAmI(socket), socket->Handle, zeroCnt, rc);
+      }
       Sleep(50);
     }
   }
