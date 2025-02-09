@@ -3,11 +3,13 @@
 #include <Syncme/Logger/Log.h>
 #include <Syncme/Sleep.h>
 #include <Syncme/Sockets/BIOSocket.h>
+#include <Syncme/Sockets/SocketEvent.h>
 #include <Syncme/Sockets/SocketPair.h>
 #include <Syncme/Sockets/SSLSocket.h>
 #include <Syncme/TickCount.h>
 
 using namespace Syncme;
+using namespace Syncme::Implementation;
 
 const uint64_t PEER_DISCONNECT_TIMEOUT = 2000;
 
@@ -220,6 +222,16 @@ int SocketPair::Read(void* buffer, size_t size, SocketPtr& from, int timeout)
     , Client->BreakRead
   );
 
+#ifdef _WIN32
+  HANDLE object[6]{};
+  object[0] = Server->WExitEvent;
+  object[1] = Server->WStopEvent;
+  object[2] = ((SocketEvent*)Server->RxEvent.get())->GetWSAEvent();
+  object[3] = Server->WStopIO;
+  object[4] = ((SocketEvent*)Client->RxEvent.get())->GetWSAEvent();
+  object[5] = Client->WStopIO;
+#endif
+
   for (int loops = 0, zeroCnt = 0;; ++loops)
   {
     n = IO(Client, buffer, size, from, 0);
@@ -257,7 +269,33 @@ int SocketPair::Read(void* buffer, size_t size, SocketPtr& from, int timeout)
       milliseconds = uint32_t(start + timeout - t);
     }
 
+#ifdef _WIN32
+    WAIT_RESULT rc{};
+    auto wr = ::WaitForMultipleObjects(
+      6
+      , object
+      , false
+      , milliseconds
+    );
+
+    switch (wr)
+    {
+    case WAIT_TIMEOUT: rc = WAIT_RESULT::TIMEOUT; break;
+    case WAIT_OBJECT_0: rc = WAIT_RESULT::OBJECT_0; break;
+    case WAIT_OBJECT_0 + 1: rc = WAIT_RESULT::OBJECT_1; break;
+    case WAIT_OBJECT_0 + 2: rc = WAIT_RESULT::OBJECT_2; break;
+    case WAIT_OBJECT_0 + 3: rc = WAIT_RESULT::OBJECT_3; break;
+    case WAIT_OBJECT_0 + 4: rc = WAIT_RESULT::OBJECT_4; break;
+    case WAIT_OBJECT_0 + 5: rc = WAIT_RESULT::OBJECT_5; break;
+    
+    case WAIT_FAILED:
+    default:
+      rc = WAIT_RESULT::FAILED; break;
+    }
+#else
     auto rc = WaitForMultipleObjects(events, false, milliseconds);
+#endif
+
     if (rc == WAIT_RESULT::OBJECT_0 || rc == WAIT_RESULT::OBJECT_1)
     {
       Server->SKT_SET_LAST_ERROR(CONNECTION_ABORTED);
@@ -305,7 +343,33 @@ int SocketPair::Read(void* buffer, size_t size, SocketPtr& from, int timeout)
 
     SocketPtr socket = rc == WAIT_RESULT::OBJECT_2 ? Server : Client;
 
-    int netev = GetSocketEvents(socket->RxEvent);
+    int netev = 0;
+
+#ifdef _WIN32
+    WSANETWORKEVENTS nev{};
+    int stat = WSAEnumNetworkEvents(
+      socket->Handle
+      , ((SocketEvent*)socket->RxEvent.get())->GetWSAEvent()
+      , &nev
+    );
+
+    if (stat)
+    {
+      socket->SKT_SET_LAST_ERROR(GENERIC);
+      return false;
+    }
+
+    if (nev.lNetworkEvents & FD_CLOSE)
+      netev |= EVENT_CLOSE;
+
+    if (nev.lNetworkEvents & FD_WRITE)
+      netev |= EVENT_WRITE;
+
+    if (nev.lNetworkEvents & FD_READ)
+      netev |= EVENT_READ;
+#else
+    netev = GetSocketEvents(socket->RxEvent);
+#endif
     if (netev & EVENT_CLOSE)
     {
       socket->Peer.Disconnected = true;
