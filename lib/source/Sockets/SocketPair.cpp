@@ -77,6 +77,19 @@ int SocketPair::PeerDisconnected()
   return int(PEER_DISCONNECT_TIMEOUT);
 }
 
+bool SocketPair::IsDisconnected()
+{
+  std::lock_guard<std::mutex> lock(CloseLock);
+
+  if (Client && Client->PeerDisconnected())
+    return true;
+
+  if (Server && Server->PeerDisconnected())
+    return true;
+
+  return false;
+}
+
 void SocketPair::Close()
 {
   std::lock_guard<std::mutex> lock(CloseLock);

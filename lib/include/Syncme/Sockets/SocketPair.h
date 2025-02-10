@@ -37,6 +37,7 @@ namespace Syncme
     SINCMELNK void Close();
     SINCMELNK bool Closing() const;
     SINCMELNK int PeerDisconnected();
+    SINCMELNK bool IsDisconnected();
 
     SINCMELNK HEvent GetExitEvent() const;
     SINCMELNK HEvent GetCloseEvent() const;
