@@ -277,7 +277,10 @@ namespace Syncme
     static uint32_t CalculateTimeout(int timeout, uint64_t start, bool& expired);
 
     virtual int InternalWrite(const void* buffer, size_t size, int timeout) = 0;
+
+#if defined(_WIN32) && SKTCOUNTERS
     IOCountersGroup& MyCountersGroup();
+#endif
 
     static void DumpGroup(
       const Logme::ID& CH

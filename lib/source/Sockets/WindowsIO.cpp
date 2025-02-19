@@ -264,7 +264,7 @@ bool Socket::IO(int timeout, IOStat& stat, IOFlags flags)
     DWORD rc = 0;
 
     TimePoint t0;
-    for (int i = 0; i < 5000; i++)
+    for (int i = 0; i < 5; i++)
     {
       rc = ::WaitForMultipleObjects(5, object, false, 0);
       if (rc != WAIT_TIMEOUT)

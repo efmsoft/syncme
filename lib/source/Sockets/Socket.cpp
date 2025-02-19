@@ -184,10 +184,12 @@ const IOCounters& Socket::GetTotals()
   return Totals;
 }
 
+#if defined(_WIN32) && SKTCOUNTERS
 IOCountersGroup& Socket::MyCountersGroup()
 {
   return Pair->AmIClient(this) ? Counters.Client : Counters.Server;
 }
+#endif
 
 void Socket::SetLastError(SKT_ERROR e, const char* file, int line)
 {
