@@ -141,6 +141,16 @@ SocketPtr SocketPair::CreateSSLSocket(SSL* ssl)
   return std::make_shared<SSLSocket>(this, ssl);
 }
 
+bool SocketPair::AmIClient(Socket* socket) const
+{
+  return socket == Client.get();
+}
+
+bool SocketPair::AmIServer(Socket* socket) const
+{
+  return socket == Server.get();
+}
+
 const char* SocketPair::WhoAmI(SocketPtr socket) const
 {
   return WhoAmI(socket.get());

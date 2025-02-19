@@ -23,7 +23,8 @@
 #define SKTEPOLL 0
 #endif
 
-#define SKTIODEBUG 0
+#define SKTIODEBUG 1
+#define SKTCOUNTERS 1
 
 namespace Syncme
 {
@@ -60,6 +61,46 @@ namespace Syncme
 #if SKTIODEBUG
     char History[4096];
 #endif
+  };
+
+  struct IOCountersGroup
+  {
+    uint32_t IOFunctionCall; // Number of IO() calls
+    uint32_t TotalIOLoops; // Total number of IO() loops
+    uint32_t TotalLoopTime; // Total time of IO() loops
+    uint32_t TotalWaitTime; // Total time of WaitForMultipleObjects calls
+    uint32_t WaitCount; // Number of WaitForMultipleObjects calls with time < 100ms
+    uint32_t Timeouts; // Number of timeouts
+    uint32_t Events[5]; // Number of events
+
+    IOCountersGroup& operator+=(const IOCountersGroup& g)
+    {
+      IOFunctionCall += g.IOFunctionCall;
+      TotalIOLoops += g.TotalIOLoops;
+      TotalLoopTime += g.TotalLoopTime;
+      TotalWaitTime += g.TotalWaitTime;
+      WaitCount += g.WaitCount;
+
+      Timeouts += g.Timeouts;
+
+      for (size_t i = 0; i < sizeof(Events) / sizeof(Events[0]); ++i)
+        Events[i] += g.Events[i];
+
+      return *this;
+    }
+  };
+
+  struct IOCounters
+  {
+    IOCountersGroup Server;
+    IOCountersGroup Client;
+  
+    IOCounters& operator+=(const IOCounters& c)
+    {
+      Server += c.Server;
+      Client += c.Client;
+      return *this;
+    }
   };
 
   union IOFlags
@@ -107,6 +148,7 @@ namespace Syncme
     Sockets::IO::Queue RxQueue;
     Sockets::IO::Queue TxQueue;
     std::mutex IOLock;
+    std::mutex TxLock;
 
     bool FailLogged;
 
@@ -115,7 +157,13 @@ namespace Syncme
     void* WStopEvent;
     void* WStopIO;
     void* WStartTX;
+
+  #if SKTCOUNTERS
+    IOCounters Counters;
+  #endif
 #endif
+    static std::mutex TotalsLock;
+    static IOCounters Totals;
 
     uint32_t ExitEventCookie;
     uint32_t CloseEventCookie;
@@ -130,6 +178,17 @@ namespace Syncme
 #endif
 
     char RxBuffer[Sockets::IO::BUFFER_SIZE];
+
+    enum WaitOrder
+    {
+      evSocket,
+      evTX,
+      evBreak,
+      evExit,
+      evStop
+    };
+
+    static const char* EvName[5];
 
   public:
     SINCMELNK Socket(SocketPair* pair, int handle = -1, bool enableClose = true);
@@ -151,9 +210,9 @@ namespace Syncme
     SINCMELNK int Read(std::vector<char>& buffer, int timeout = FOREVER);
     SINCMELNK int Read(void* buffer, size_t size, int timeout = FOREVER);
 
-    SINCMELNK int WriteStr(const std::string& str, int timeout = FOREVER);
-    SINCMELNK int Write(const std::vector<char>& arr, int timeout = FOREVER);
-    SINCMELNK int Write(const void* buffer, size_t size, int timeout = FOREVER);
+    SINCMELNK int WriteStr(const std::string& str, int timeout = FOREVER, bool* queued = nullptr);
+    SINCMELNK int Write(const std::vector<char>& arr, int timeout = FOREVER, bool* queued = nullptr);
+    SINCMELNK int Write(const void* buffer, size_t size, int timeout = FOREVER, bool* queued = nullptr);
 
     SINCMELNK virtual int GetFD() const = 0;
     SINCMELNK virtual SKT_ERROR Ossl2SktError(int ret) const = 0;
@@ -181,6 +240,12 @@ namespace Syncme
     SINCMELNK virtual bool IO(int timeout, IOStat& stat, IOFlags flags = IOFlags{});
     SINCMELNK virtual bool Flush(int timeout = -1);
 
+    SINCMELNK static const IOCounters& GetTotals();
+
+#ifdef USE_LOGME
+    SINCMELNK static void DumpTotals(const Logme::ID& CH);
+#endif
+
   protected:
     bool ReadIO(IOStat& stat);
     bool WriteIO(IOStat& stat);
@@ -200,16 +265,26 @@ namespace Syncme
     void InitWin32Events();
     void FreeWin32Events();
     void SignallWindowsEvent(void* h, uint32_t cookie, bool failed);
+    bool ReadSocketEvents(IOStat& stat, void* h);
+    void EventSelect(IOStat& stat);
 #endif
 
 #if SKTIODEBUG
-    void IoDebug(IOStat& stat, const char* op, int n);
+    void IoDebug(IOStat& stat, const char* op, int n, const char* tn = nullptr);
 #endif
 
     int ReadPacket(void* buffer, size_t size);
     static uint32_t CalculateTimeout(int timeout, uint64_t start, bool& expired);
 
     virtual int InternalWrite(const void* buffer, size_t size, int timeout) = 0;
+    IOCountersGroup& MyCountersGroup();
+
+    static void DumpGroup(
+      const Logme::ID& CH
+      , Logme::Override& ovr
+      , const IOCountersGroup& g
+      , const char* title
+    );
   };
 
   typedef std::shared_ptr<Socket> SocketPtr;
@@ -232,6 +307,14 @@ namespace Syncme
 
 #if SKTIODEBUG
 #define IODEBUG(op, n) IoDebug(stat, op, int(n))
+#define IODEBUGS(op, tn) IoDebug(stat, op, 0, tn)
 #else
 #define IODEBUG(...)
+#define IODEBUGS(...)
+#endif
+
+#if defined(_WIN32) && SKTCOUNTERS
+#define SKTCOUNTERADD(n, v) MyCountersGroup().##n += v 
+#else
+#define SKTCOUNTERADD(n, v)
 #endif

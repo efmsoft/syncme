@@ -50,6 +50,8 @@ namespace Syncme
 
     SINCMELNK const char* WhoAmI(SocketPtr socket) const;
     SINCMELNK const char* WhoAmI(Socket* socket) const;
+    SINCMELNK bool AmIClient(Socket* socket) const;
+    SINCMELNK bool AmIServer(Socket* socket) const;
 
     SINCMELNK int Read(std::vector<char>& buffer, SocketPtr& from, int timeout = FOREVER);
     SINCMELNK int Read(void* buffer, size_t size, SocketPtr& from, int timeout = FOREVER);

@@ -21,6 +21,13 @@
 using namespace Syncme;
 using namespace std::placeholders;
 
+std::mutex Socket::TotalsLock;
+IOCounters Socket::Totals{};
+
+const char* Socket::EvName[5] =
+{
+  "evSocket", "evTX", "evBreak", "evExit", "evStop"
+};
 
 Socket::Socket(SocketPair* pair, int handle, bool enableClose)
   : Pair(pair)
@@ -40,6 +47,9 @@ Socket::Socket(SocketPair* pair, int handle, bool enableClose)
   , WStopEvent(nullptr)
   , WStopIO(nullptr)
   , WStartTX(nullptr)
+#if SKTCOUNTERS
+  , Counters{}
+#endif
 #endif
   , ExitEventCookie(0)
   , CloseEventCookie(0)
@@ -160,6 +170,23 @@ Socket::~Socket()
     EventDescriptor = -1;
   }
 #endif
+
+#ifdef _WIN32
+#if SKTCOUNTERS
+  std::lock_guard lock(TotalsLock);
+  Totals += Counters;
+#endif
+#endif
+}
+
+const IOCounters& Socket::GetTotals()
+{
+  return Totals;
+}
+
+IOCountersGroup& Socket::MyCountersGroup()
+{
+  return Pair->AmIClient(this) ? Counters.Client : Counters.Server;
 }
 
 void Socket::SetLastError(SKT_ERROR e, const char* file, int line)
@@ -675,3 +702,39 @@ bool Socket::PeerFromHostString(
   freeaddrinfo(servinfo);
   return true;
 }
+
+#ifdef USE_LOGME
+void Socket::DumpGroup(
+  const Logme::ID& CH
+  , Logme::Override& ovr
+  , const IOCountersGroup& g
+  , const char* title
+)
+{
+  LogmeI(CH, ovr, "%s:", title);
+  LogmeI(CH, ovr, "IOFunctionCall: %i", (int)g.IOFunctionCall);
+  LogmeI(CH, ovr, "TotalIOLoops: %i", (int)g.TotalIOLoops);
+  LogmeI(CH, ovr, "AverageLoopTime: %i", g.TotalIOLoops ? int(g.TotalLoopTime / g.TotalIOLoops) : 0);
+  LogmeI(CH, ovr, "AverageWaitTime: %i", g.WaitCount? int(g.TotalWaitTime / g.WaitCount) : 0);
+  LogmeI(CH, ovr, "Timeouts: %i", (int)g.Timeouts);
+
+  for (size_t i = 0; i < sizeof(g.Events) / sizeof(g.Events[0]); ++i)
+    LogmeI(CH, ovr, "%s: %i", EvName[i], (int)g.Events[i]);
+
+  LogmeI(CH, ovr, "");
+}
+
+void Socket::DumpTotals(const Logme::ID& CH)
+{
+#if SKTCOUNTERS
+  std::lock_guard lock(TotalsLock);
+
+  Logme::Override ovr;
+  ovr.Remove.Method = true;
+  LogmeI(CH, ovr, "[SOCKET TOTALS]");
+  LogmeI(CH, ovr, "---------------");
+  DumpGroup(CH, ovr, Totals.Client, "[Client]");
+  DumpGroup(CH, ovr, Totals.Server, "[Server]");
+#endif
+}
+#endif

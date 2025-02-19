@@ -54,20 +54,58 @@ void Queue::PushFree(BufferPtr b)
   }
 }
 
-BufferPtr Queue::GetBuffer()
+BufferPtr Queue::GetBuffer(Queue* borrowFrom)
 {
   BufferPtr b = PopFree();
 
   if (b == nullptr)
   {
-    b = std::make_shared<Buffer>();
-    if (b == nullptr)
-      return BufferPtr();
+    if (borrowFrom)
+      b = borrowFrom->PopFree();
 
-    b->reserve(BUFFER_SIZE);
+    if (b == nullptr)
+    {
+      b = std::make_shared<Buffer>();
+      if (b == nullptr)
+        return BufferPtr();
+
+      b->reserve(BUFFER_SIZE);
+    }
   }
 
   return b;
+}
+
+bool Queue::Append(Queue& queue, size_t* qsize)
+{
+  if (qsize)
+    *qsize = Total;
+
+  if (queue.Count())
+  {
+    if (true)
+    {
+      std::lock_guard guard(Lock);
+
+      for (;;)
+      {
+        auto b = queue.PopFirst();
+        if (b == nullptr)
+          break;
+
+        Packets.push_back(b);
+        Total += b->size();
+
+        if (qsize)
+          *qsize = Total;
+      }
+    }
+
+    if (Signal)
+      Signal();
+  }
+
+  return true;
 }
 
 bool Queue::Append(BufferPtr buffer, size_t* qsize)
@@ -98,7 +136,7 @@ bool Queue::Append(BufferPtr buffer, size_t* qsize)
   return true;
 }
 
-bool Queue::Insert(const void* p, size_t cb, size_t* qsize)
+bool Queue::Insert(const void* p, size_t cb, size_t* qsize, Queue* borrowFrom)
 {
   assert(p);
   assert(cb);
@@ -112,7 +150,7 @@ bool Queue::Insert(const void* p, size_t cb, size_t* qsize)
 
   do
   {
-    BufferPtr b = GetBuffer();
+    BufferPtr b = GetBuffer(borrowFrom);
     if (b == nullptr)
       return false;
 
@@ -135,7 +173,7 @@ bool Queue::Insert(const void* p, size_t cb, size_t* qsize)
   return true;
 }
 
-bool Queue::Append(const void* p, size_t cb, size_t* qsize)
+bool Queue::Append(const void* p, size_t cb, size_t* qsize, Queue* borrowFrom)
 {
   assert(p);
   assert(cb);
@@ -172,7 +210,7 @@ bool Queue::Append(const void* p, size_t cb, size_t* qsize)
       }
     }
 
-    BufferPtr b = GetBuffer();
+    BufferPtr b = GetBuffer(borrowFrom);
     if (b == nullptr)
       return false;
 
@@ -203,6 +241,11 @@ bool Queue::IsEmpty() const
 size_t Queue::Size() const
 {
   return Total;
+}
+
+size_t Queue::Count() const
+{
+  return Packets.size();
 }
 
 BufferPtr Queue::Join(size_t upto)

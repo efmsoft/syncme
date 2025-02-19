@@ -43,7 +43,7 @@ bool Socket::Flush(int timeout)
 }
 
 #if SKTIODEBUG
-void Socket::IoDebug(IOStat& stat, const char* op, int n)
+void Socket::IoDebug(IOStat& stat, const char* op, int n, const char* tn)
 {
   char buf[32]{};
   const char* pbuf = buf;
@@ -54,13 +54,17 @@ void Socket::IoDebug(IOStat& stat, const char* op, int n)
     l = 1;
     pbuf = "|";
   }
+  else if (tn)
+  {
+    l = sprintf(buf, "%s:%s", op, tn);
+  }
   else
     l = sprintf(buf, "%s:%i", op, n);
   
   if (l > 0)
   {
     auto s = strlen(stat.History);
-    if (s && s < sizeof(stat.History) - 1)
+    if (s && s < sizeof(stat.History) - 2)
     {
       stat.History[s] = ' ';
       s++;
@@ -80,6 +84,7 @@ void Socket::IoDebug(IOStat& stat, const char* op, int n)
 bool Socket::WriteIO(IOStat& stat)
 {
   TimePoint t0;
+  std::lock_guard lock(TxLock);
 
   for (;;)
   {
@@ -154,6 +159,7 @@ bool Socket::ReadIO(IOStat& stat)
 
       size_t qsize = 0;
       RxQueue.Append(RxBuffer, n, &qsize);
+
       continue;
     }
 
@@ -209,24 +215,42 @@ int Socket::Read(std::vector<char>& buffer, int timeout)
   return Read(&buffer[0], buffer.size(), timeout);
 }
 
-int Socket::WriteStr(const std::string& str, int timeout)
+int Socket::WriteStr(const std::string& str, int timeout, bool* queued)
 {
-  return Write(str.c_str(), str.length(), timeout);
+  return Write(str.c_str(), str.length(), timeout, queued);
 }
 
-int Socket::Write(const std::vector<char>& arr, int timeout)
+int Socket::Write(const std::vector<char>& arr, int timeout, bool* queued)
 {
-  return Write(&arr[0], arr.size(), timeout);
+  return Write(&arr[0], arr.size(), timeout, queued);
 }
 
-int Socket::Write(const void* buffer, size_t size, int timeout)
+int Socket::Write(const void* buffer, size_t size, int timeout, bool* queued)
 {
+  if (queued)
+    *queued = false;
+
+  if (size == 0)
+    return 0;
+
+  std::lock_guard lock(TxLock);
+
+  if (TxQueue.IsEmpty())
+  {
+    int e = InternalWrite(buffer, size, timeout);
+    if (e < 0 || e > 0)
+      return e;
+  }
+
   if (TxQueue.Append(buffer, size) == false)
   {
-    SKT_SET_LAST_ERROR(WOULDBLOCK);
-    return 0;
+    SKT_SET_LAST_ERROR(GENERIC);
+    return -1;
   }
   
+  if (queued)
+    *queued = true;
+
   SKT_SET_LAST_ERROR(NONE);
   return size;
 }

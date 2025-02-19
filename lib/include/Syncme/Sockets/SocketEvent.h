@@ -50,6 +50,8 @@ namespace Syncme
       SINCMELNK static bool IsSocketEvent(HEvent h);
 
       SINCMELNK bool ExpectWrite() const;
+      SINCMELNK bool SetMask(int mask);
+      SINCMELNK int GetMask() const;
 
 #ifndef _WIN32
       SINCMELNK epoll_event GetPollEvent() const;

@@ -234,6 +234,39 @@ bool SocketEvent::ExpectWrite() const
   return TxQueue ? TxQueue->IsEmpty() == false : false;
 }
 
+int SocketEvent::GetMask() const
+{
+  return EventMask;
+}
+
+bool SocketEvent::SetMask(int mask)
+{
+#ifdef _WIN32
+  if (mask == EventMask)
+    return true;
+
+  long events = 0;
+
+  if (mask & EVENT_READ)
+    events |= FD_READ;
+
+  if (mask & EVENT_WRITE)
+    events |= FD_WRITE;
+
+  if (mask & EVENT_CLOSE)
+    events |= FD_CLOSE;
+
+  if (WSAEventSelect((SOCKET)Socket, WSAEvent, events))
+  {
+    LogosE("WSAEventSelect failed");
+    return false;
+  }
+
+  EventMask = mask;
+#endif
+  return true;
+}
+
 void SocketEvent::FireEvents(int events)
 {
   if ((events & EventMask) == 0)

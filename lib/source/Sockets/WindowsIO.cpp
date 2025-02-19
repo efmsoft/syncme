@@ -1,4 +1,5 @@
 #ifdef _WIN32
+#include <cassert>
 #include <winsock2.h>
 
 #include <Syncme/Logger/Log.h>
@@ -79,6 +80,95 @@ void Socket::SignallWindowsEvent(
   ::SetEvent(h);
 }
 
+void Socket::EventSelect(IOStat& stat)
+{
+  int mask = EVENT_READ;
+
+  if (Peer.Disconnected == false)
+    mask |= EVENT_CLOSE;
+
+  if (TxQueue.IsEmpty() == false)
+    mask |= EVENT_WRITE;
+
+  SocketEvent* socketEvent = (SocketEvent*)RxEvent.get();
+  if (mask == socketEvent->GetMask())
+    return;
+
+#if SKTIODEBUG
+  if (mask == (EVENT_READ))
+  {
+    IODEBUGS("sel", "r");
+  }
+  else if (mask == (EVENT_READ | EVENT_CLOSE))
+  {
+    IODEBUGS("sel", "rc");
+  }
+  else if (mask == (EVENT_READ | EVENT_WRITE | EVENT_CLOSE))
+  {
+    IODEBUGS("sel", "rwc");
+  }
+#endif
+
+  socketEvent->SetMask(mask);
+}
+
+static void AppendEventName(
+  char* buffer
+  , const WSANETWORKEVENTS& nev
+  , int flag
+  , int bit
+  , const char* name
+)
+{
+  if ((nev.lNetworkEvents & flag) == 0)
+    return;
+
+  if (*buffer)
+    strcat(buffer, "+");
+
+  strcat(buffer, name);
+  if (nev.iErrorCode[bit])
+    sprintf(buffer + strlen(buffer), "[%i]", nev.iErrorCode[bit]);
+}
+
+bool Socket::ReadSocketEvents(IOStat& stat, HANDLE waEvent)
+{
+  WSANETWORKEVENTS nev{};
+  if (WSAEnumNetworkEvents(Handle, waEvent, &nev))
+  {
+    SKT_SET_LAST_ERROR(GENERIC);
+    return false;
+  }
+
+#if SKTIODEBUG
+  char buffer[256]{};
+  if (nev.lNetworkEvents == 0)
+  {
+    IODEBUG("ev", 0);
+    return true;
+  }
+
+  AppendEventName(buffer, nev, FD_READ, FD_READ_BIT, "read");
+  AppendEventName(buffer, nev, FD_WRITE, FD_WRITE_BIT, "write");
+  AppendEventName(buffer, nev, FD_CLOSE, FD_CLOSE_BIT, "close");
+
+  IODEBUGS("ev", buffer);
+#endif
+
+  if (nev.lNetworkEvents & FD_CLOSE)
+  {
+    // On next cycle after attempt to read from the 
+    // socket we will break the loop
+
+    Peer.Disconnected = true;
+    Peer.When = GetTimeInMillisec();
+
+    LogW("%s: peer disconnected", Pair->WhoAmI(this));
+  }
+
+  return true;
+}
+
 bool Socket::IO(int timeout, IOStat& stat, IOFlags flags)
 {
   std::lock_guard<std::mutex> guard(IOLock);
@@ -90,28 +180,44 @@ bool Socket::IO(int timeout, IOStat& stat, IOFlags flags)
   }
 
   auto start = GetTimeInMillisec();
+  auto loopStart = GetTimeInMillisec();
+  auto callid = rand();
 
   memset(&stat, 0, sizeof(stat));
   SKT_SET_LAST_ERROR(NONE);
+
+  SKTCOUNTERADD(IOFunctionCall, 1);
 
   SocketEvent* socketEvent = (SocketEvent*)RxEvent.get();
   HANDLE waEvent = socketEvent->GetWSAEvent();
 
   HANDLE object[5]{};
-  object[0] = WExitEvent;
-  object[1] = WStopEvent;
-  object[2] = waEvent;
-  object[3] = WStopIO;
-  object[4] = WStartTX;
+  object[evSocket] = waEvent;
+  object[evTX] = WStartTX;
+  object[evBreak] = WStopIO;
+  object[evExit] = WExitEvent;
+  object[evStop] = WStopEvent;
 
+  WSANETWORKEVENTS nev{};
   for (bool expired = false;;)
   {
+    auto ticks = GetTimeInMillisec();
+    SKTCOUNTERADD(TotalLoopTime, ticks - loopStart);
+    loopStart = ticks;
+
     stat.Cycles++;
+    SKTCOUNTERADD(TotalIOLoops, 1);
+
+    // Try to reset waEvent
+    if (!ReadSocketEvents(stat, waEvent))
+      return false;
 
     // If peer is disconnected, write will fail
     // We socked still can contain data to read
     if (Peer.Disconnected == false)
     {
+      ::ResetEvent(WStartTX);
+
       // Try to write as much as possible
       if (WriteIO(stat) == false)
         return false;
@@ -134,12 +240,17 @@ bool Socket::IO(int timeout, IOStat& stat, IOFlags flags)
       return true;
     }
 
-    // Return immediatelly if we read at least one packet
-    if (RxQueue.IsEmpty() == false && flags.f.ForceWait != true)
+    if (timeout == 0)
       return true;
 
     if (flags.f.Flush && TxQueue.IsEmpty())
       return true;
+
+    // Return immediatelly if we read at least one packet
+    if (RxQueue.IsEmpty() == false && flags.f.ForceWait != true)
+      return true;
+
+    IODEBUG(nullptr, 0);
 
     uint32_t ms = CalculateTimeout(timeout, start, expired);
     if (expired)
@@ -148,54 +259,66 @@ bool Socket::IO(int timeout, IOStat& stat, IOFlags flags)
       break;
     }
 
-    IODEBUG(nullptr, 0);
+    EventSelect(stat);
+
+    DWORD rc = 0;
 
     TimePoint t0;
-    auto rc = ::WaitForMultipleObjects(5, object, false, timeout);
-    stat.WaitTime += t0.ElapsedSince();
+    for (int i = 0; i < 5000; i++)
+    {
+      rc = ::WaitForMultipleObjects(5, object, false, 0);
+      if (rc != WAIT_TIMEOUT)
+        break;
+
+      YieldProcessor();
+    }
+    
+    if (rc == WAIT_TIMEOUT)
+      rc = ::WaitForMultipleObjects(5, object, false, ms);
+
+    auto spent = t0.ElapsedSince();
+    stat.WaitTime += spent;
     stat.Wait++;
+
+    if (spent < 100)
+    {
+      SKTCOUNTERADD(TotalWaitTime, spent);
+      SKTCOUNTERADD(WaitCount, 1);
+    }
+
+    if (rc == WAIT_FAILED)
+    {
+      IODEBUG("failed", spent);
+      SKT_SET_LAST_ERROR(GENERIC);
+      return false;
+    }
 
     if (rc == WAIT_TIMEOUT)
     {
+      IODEBUG("timeout", spent);
+      SKTCOUNTERADD(Timeouts, 1);
       SKT_SET_LAST_ERROR(TIMEOUT);
       break;
     }
 
+    int ev = int(rc - WAIT_OBJECT_0);
+    IODEBUG(EvName[ev], spent);
+    SKTCOUNTERADD(Events[ev], 1);
+
     // WExitEvent or WStopEvent
-    if (rc == WAIT_OBJECT_0 || rc == WAIT_OBJECT_0 + 1)
+    if (ev == evExit || ev == evStop)
     {
       SKT_SET_LAST_ERROR(CONNECTION_ABORTED);
       return false;
     }
 
     // WStopIO
-    if (rc == WAIT_OBJECT_0 + 3)
+    if (ev == evBreak)
       break;
 
     // WStartTX
-    if (rc == WAIT_OBJECT_0 + 4)
+    if (ev == evTX)
       continue;
-
-    WSANETWORKEVENTS nev{};
-    if (WSAEnumNetworkEvents(Handle, waEvent, &nev))
-    {
-      SKT_SET_LAST_ERROR(GENERIC);
-      return false;
-    }
-
-    if (nev.lNetworkEvents & FD_CLOSE)
-    {
-      // On next cycle after attempt to read from the 
-      // socket we will break the loop
-
-      Peer.Disconnected = true;
-      Peer.When = GetTimeInMillisec();
-
-      LogW("%s: peer disconnected", Pair->WhoAmI(this));
-    }
-
-    // Other flags are not interesting for us
-    // we will try both write and read in all cases
   }
 
   return true;
