@@ -413,6 +413,15 @@ int SocketPair::Read(void* buffer, size_t size, SocketPtr& from, int timeout)
       {
         LogI("%s: fd=%d start 'sleep' mode, zero 'read' counter %d, rc %d", WhoAmI(socket), socket->Handle, zeroCnt, rc);
       }
+      // Disconnect
+      if (zeroCnt > 8)
+      {
+        LogW("%s: fd=%d long 'sleep' detected, counter %d, rc %d, closing socket", WhoAmI(socket), socket->Handle, zeroCnt, rc);
+        socket->Peer.Disconnected = true;
+        socket->Peer.When = GetTimeInMillisec();
+        timeout = 0;
+      }
+
       Sleep(50);
     }
   }
