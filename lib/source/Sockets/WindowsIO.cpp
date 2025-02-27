@@ -261,20 +261,10 @@ bool Socket::IO(int timeout, IOStat& stat, IOFlags flags)
 
     EventSelect(stat);
 
-    DWORD rc = 0;
+    DWORD rc = WAIT_TIMEOUT;
 
     TimePoint t0;
-    for (int i = 0; i < 5; i++)
-    {
-      rc = ::WaitForMultipleObjects(5, object, false, 0);
-      if (rc != WAIT_TIMEOUT)
-        break;
-
-      YieldProcessor();
-    }
-    
-    if (rc == WAIT_TIMEOUT)
-      rc = ::WaitForMultipleObjects(5, object, false, ms);
+    rc = ::WaitForMultipleObjects(5, object, false, ms);
 
     auto spent = t0.ElapsedSince();
     stat.WaitTime += spent;
