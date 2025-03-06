@@ -363,7 +363,7 @@ bool Socket::SetOptions()
 
   // we should not reduce the buffer size 
   // under any circumstances !!!
-  int rcvsize = config->GetInt("rcvbuf", -1);
+  int rcvsize = config->GetByteSize("rcvbuf", -1);
   if (rcvsize != -1 && rcvsize > rcvbuf)
   {
     if (setsockopt(Handle, SOL_SOCKET, SO_RCVBUF, (char*)&rcvsize, sizeof(rcvsize)))
@@ -377,7 +377,7 @@ bool Socket::SetOptions()
 
   // we should not reduce the buffer size 
   // under any circumstances !!!
-  int sndsize = config->GetInt("sndbuf", -1);
+  int sndsize = config->GetByteSize("sndbuf", -1);
   if (sndsize != -1 && sndsize > sndbuf)
   {
     if (setsockopt(Handle, SOL_SOCKET, SO_SNDBUF, (char*)&sndsize, sizeof(sndsize)))
@@ -402,7 +402,7 @@ bool Socket::SetOptions()
   }
 
 #ifdef _WIN32
-  ULONG delay = (ULONG)config->GetInt("keepalive-delay", 15000);
+  ULONG delay = (ULONG)config->GetTimeInMilliseconds("keepalive-delay", 15000);
   if (delay)
   {
     struct tcp_keepalive keepalive_vals = {

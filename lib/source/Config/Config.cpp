@@ -31,3 +31,33 @@ std::string Config::GetString(const char* option, const char* def)
 {
   return def;
 }
+
+int Config::GetByteSize(const std::string& option, int def)
+{
+  return GetByteSize(option.c_str(), def);
+}
+
+int Config::GetByteSize(const char* option, int def)
+{
+  return def;
+}
+
+int Config::GetTimeInMilliseconds(const std::string& option, const char* def)
+{
+  return GetTimeInMilliseconds(option.c_str(), def);
+}
+
+int Config::GetTimeInMilliseconds(const char* option, const char* def)
+{
+  return 0;
+}
+
+int Config::GetTimeInMilliseconds(const std::string& option, int def)
+{
+  return GetTimeInMilliseconds(option.c_str(), def);
+}
+
+int Config::GetTimeInMilliseconds(const char* option, int def)
+{
+  return def;
+}

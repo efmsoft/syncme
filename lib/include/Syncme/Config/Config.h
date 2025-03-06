@@ -17,6 +17,15 @@ namespace Syncme
 
     SINCMELNK virtual std::string GetString(const std::string& option, const std::string& def);
     SINCMELNK virtual std::string GetString(const char* option, const char* def);
+
+    SINCMELNK virtual int GetByteSize(const std::string& option, int def);
+    SINCMELNK virtual int GetByteSize(const char* option, int def);
+
+    SINCMELNK virtual int GetTimeInMilliseconds(const std::string& option, const char* def);
+    SINCMELNK virtual int GetTimeInMilliseconds(const char* option, const char* def);
+
+    SINCMELNK virtual int GetTimeInMilliseconds(const std::string& option, int def);
+    SINCMELNK virtual int GetTimeInMilliseconds(const char* option, int def);
   };
 
   typedef std::shared_ptr<Config> ConfigPtr;
