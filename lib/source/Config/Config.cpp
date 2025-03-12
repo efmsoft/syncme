@@ -61,3 +61,18 @@ int Config::GetTimeInMilliseconds(const char* option, int def)
 {
   return def;
 }
+
+void Config::RegisterCachedOption(const char* option, IUnknown* unk)
+{
+  (void)unk;
+}
+
+void Config::UnregisterCachedOption(IUnknown* unk)
+{
+  (void)unk;
+}
+
+bool Config::DynamicUpdate()
+{
+  return false;
+}
