@@ -204,6 +204,12 @@ int SSLSocket::TranslateSSLError(int n, const char* method)
   if (err == SKT_ERROR::NONE || err == SKT_ERROR::WOULDBLOCK)
     return 0;
 
+  if (err == SKT_ERROR::GRACEFUL_DISCONNECT)
+  {
+    CloseNotify = false;
+    return 0;
+  }
+
   if (err != SKT_ERROR::GRACEFUL_DISCONNECT)
   {
     int e = SSL_get_error(Ssl, n);
