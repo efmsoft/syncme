@@ -741,6 +741,17 @@ void Socket::DumpTotals(const Logme::ID& CH)
 }
 #endif
 
+bool Socket::IsIPv6(const std::string& ip)
+{
+  return IsIPv6(ip.c_str());
+}
+
+bool Socket::IsIPv6(const char* ip)
+{
+  struct in6_addr addr6{};
+  return inet_pton(AF_INET6, ip, &addr6) == 1;
+}
+
 bool Socket::IsLoopbackIP(const std::string& ip)
 {
   return IsLoopbackIP(ip.c_str());
@@ -748,9 +759,7 @@ bool Socket::IsLoopbackIP(const std::string& ip)
 
 bool Socket::IsLoopbackIP(const char* ip)
 {
-  struct in_addr ipv4 {};
-  struct in6_addr ipv6 {};
-
+  struct in_addr ipv4{};
   if (inet_pton(AF_INET, ip, &ipv4) == 1)
   {
 #ifdef WIN32
@@ -760,6 +769,7 @@ bool Socket::IsLoopbackIP(const char* ip)
 #endif
   }
 
+  struct in6_addr ipv6{};
   if (inet_pton(AF_INET6, ip, &ipv6) == 1)
   {
     const uint8_t loopback6[16] = { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1 };

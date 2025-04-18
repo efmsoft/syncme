@@ -245,6 +245,9 @@ namespace Syncme
     SINCMELNK static bool IsLoopbackIP(const char* ip);
     SINCMELNK static bool IsLoopbackIP(const std::string& ip);
 
+    SINCMELNK static bool IsIPv6(const char* ip);
+    SINCMELNK static bool IsIPv6(const std::string& ip);
+
 #ifdef USE_LOGME
     SINCMELNK static void DumpTotals(const Logme::ID& CH);
 #endif
