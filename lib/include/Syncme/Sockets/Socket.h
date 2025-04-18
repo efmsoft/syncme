@@ -241,6 +241,9 @@ namespace Syncme
     SINCMELNK virtual bool Flush(int timeout = -1);
 
     SINCMELNK static const IOCounters& GetTotals();
+    
+    SINCMELNK static bool IsLoopbackIP(const char* ip);
+    SINCMELNK static bool IsLoopbackIP(const std::string& ip);
 
 #ifdef USE_LOGME
     SINCMELNK static void DumpTotals(const Logme::ID& CH);

@@ -740,3 +740,31 @@ void Socket::DumpTotals(const Logme::ID& CH)
 #endif
 }
 #endif
+
+bool Socket::IsLoopbackIP(const std::string& ip)
+{
+  return IsLoopbackIP(ip.c_str());
+}
+
+bool Socket::IsLoopbackIP(const char* ip)
+{
+  struct in_addr ipv4 {};
+  struct in6_addr ipv6 {};
+
+  if (inet_pton(AF_INET, ip, &ipv4) == 1)
+  {
+#ifdef WIN32
+    return (ipv4.S_un.S_un_b.s_b1 == 127);
+#else
+    return ((ntohl(ipv4.s_addr) >> 24) & 0xFF) == 127;
+#endif
+  }
+
+  if (inet_pton(AF_INET6, ip, &ipv6) == 1)
+  {
+    const uint8_t loopback6[16] = { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1 };
+    return (memcmp(&ipv6, loopback6, 16) == 0);
+  }
+
+  return false;
+}
