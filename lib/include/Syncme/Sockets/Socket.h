@@ -23,8 +23,8 @@
 #define SKTEPOLL 0
 #endif
 
-#define SKTIODEBUG 1
-#define SKTCOUNTERS 1
+#define SKTIODEBUG 0
+#define SKTCOUNTERS 0
 
 namespace Syncme
 {
