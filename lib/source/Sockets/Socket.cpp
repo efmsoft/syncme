@@ -582,7 +582,7 @@ bool Socket::InitAcceptAddress()
       break;
 
     default:
-      LogosE("Unknown address family");
+      LogE("Unsupported address family: %d", addr.ss.ss_family);
       return false;
   }
 
@@ -639,7 +639,7 @@ bool Socket::InitPeer()
       break;
 
     default:
-      LogosE("Unknown address family");
+      LogE("Unsupported address family: %d", addr.ss.ss_family);
       return false;
   }
 
