@@ -541,43 +541,54 @@ bool Socket::InitAcceptAddress()
 {
   union
   {
-    char saddr4[INET_ADDRSTRLEN];
-    char saddr6[INET6_ADDRSTRLEN];
-  };
+    sockaddr_storage ss;
+    sockaddr_in      sin;
+    sockaddr_in6     sin6;
+  } addr;
 
   assert(Handle != -1 || Pair->ClosePending);
 
   if (Handle == -1)
     return false;
 
-  sockaddr_in addr4{};
-  socklen_t cb = sizeof(addr4);
-  if (getsockname(Handle, (sockaddr*)&addr4, &cb) != -1)
-  {
-    if (inet_ntop(AF_INET, &addr4.sin_addr, saddr4, sizeof(saddr4)) != nullptr)
-    {
-      AcceptIP = saddr4;
-      AcceptPort = htons(addr4.sin_port);
-      return true;
-    }
-  }
-
-  sockaddr_in6 addr6{};
-  cb = sizeof(addr6);
-  if (getsockname(Handle, (sockaddr*)&addr6, &cb) == -1)
+  socklen_t addr_len = sizeof(addr);
+  if (getsockname(Handle, reinterpret_cast<sockaddr*>(&addr.ss), &addr_len) == -1)
   {
     LogosE("getsockname failed");
     return false;
   }
 
-  if (inet_ntop(AF_INET6, &addr6.sin6_addr, saddr6, INET6_ADDRSTRLEN) == nullptr)
+  char ip_str[INET6_ADDRSTRLEN];
+  uint16_t port;
+
+  switch (addr.ss.ss_family)
   {
-    LogosE("inet_ntop() failed");
-    return false;
+    case AF_INET:
+      if (!inet_ntop(AF_INET, &addr.sin.sin_addr, ip_str, sizeof(ip_str)))
+      {
+        LogosE("inet_ntop(AF_INET) failed");
+        return false;
+      }
+      port = ntohs(addr.sin.sin_port);
+      break;
+
+    case AF_INET6:
+      if (!inet_ntop(AF_INET6, &addr.sin6.sin6_addr, ip_str, sizeof(ip_str)))
+      {
+        LogosE("inet_ntop(AF_INET6) failed");
+        return false;
+      }
+      port = ntohs(addr.sin6.sin6_port);
+      break;
+
+    default:
+      LogE("Unsupported address family: %d", addr.ss.ss_family);
+      return false;
   }
 
-  AcceptIP = saddr6;
-  AcceptPort = htons(addr4.sin_port);
+  AcceptIP   = ip_str;
+  AcceptPort = port;
+
   return true;
 }
 
@@ -585,9 +596,10 @@ bool Socket::InitPeer()
 {
   union
   {
-    char saddr4[INET_ADDRSTRLEN];
-    char saddr6[INET6_ADDRSTRLEN];
-  };
+    sockaddr_storage ss;
+    sockaddr_in      sin;
+    sockaddr_in6     sin6;
+  } addr;
 
   assert(Handle != -1 || Pair->ClosePending);
 
@@ -596,34 +608,43 @@ bool Socket::InitPeer()
   
   InitAcceptAddress();
 
-  sockaddr_in addr4{};
-  socklen_t cb = sizeof(addr4);
-  if (getpeername(Handle, (sockaddr*)&addr4, &cb) != -1)
-  {
-    if (inet_ntop(AF_INET, &addr4.sin_addr, saddr4, sizeof(saddr4)) != nullptr)
-    {
-      Peer.IP = saddr4;
-      Peer.Port = ntohs(addr4.sin_port);
-      return true;
-    }
-  }
-
-  sockaddr_in6 addr6{};
-  cb = sizeof(addr6);
-  if (getpeername(Handle, (sockaddr*)&addr6, &cb) == -1)
+  socklen_t addr_len = sizeof(addr);
+  if (getpeername(Handle, reinterpret_cast<sockaddr*>(&addr.ss), &addr_len) == -1)
   {
     LogosE("getpeername failed");
     return false;
   }
 
-  if (inet_ntop(AF_INET6, &addr6.sin6_addr, saddr6, INET6_ADDRSTRLEN) == nullptr)
+  char ip_str[INET6_ADDRSTRLEN];
+  uint16_t port;
+
+  switch (addr.ss.ss_family)
   {
-    LogosE("inet_ntop() failed");
-    return false;
+    case AF_INET:
+      if (!inet_ntop(AF_INET, &addr.sin.sin_addr, ip_str, sizeof(ip_str)))
+      {
+        LogosE("inet_ntop(AF_INET) failed");
+        return false;
+      }
+      port = ntohs(addr.sin.sin_port);
+      break;
+
+    case AF_INET6:
+      if (!inet_ntop(AF_INET6, &addr.sin6.sin6_addr, ip_str, sizeof(ip_str)))
+      {
+        LogosE("inet_ntop(AF_INET6) failed");
+        return false;
+      }
+      port = ntohs(addr.sin6.sin6_port);
+      break;
+
+    default:
+      LogE("Unsupported address family: %d", addr.ss.ss_family);
+      return false;
   }
 
-  Peer.IP = saddr6;
-  Peer.Port = ntohs(addr6.sin6_port);
+  Peer.IP   = ip_str;
+  Peer.Port = port;
 
   return true;
 }
