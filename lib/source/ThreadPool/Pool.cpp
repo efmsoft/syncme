@@ -45,6 +45,12 @@ uint64_t Syncme::ThreadPool::GetThreadsStopped() {return ThreadsStopped;}
 uint64_t Syncme::ThreadPool::GetLockedInRun() {return LockedInRun;}
 uint64_t Syncme::ThreadPool::GetOnTimerCalls() {return OnTimerCalls;}
 uint64_t Syncme::ThreadPool::GetErrors() {return Errors;}
+uint64_t Syncme::ThreadPool::GetLockedInRunCreateWorker() { return LockedInRunCreateWorker; }
+uint64_t Syncme::ThreadPool::GetLockedInRunStop() { return LockedInRunStop; }
+uint64_t Syncme::ThreadPool::GetLockedInRunFail() { return LockedInRunFail; }
+uint64_t Syncme::ThreadPool::GetLockedInRunInvoke() { return LockedInRunInvoke; }
+uint64_t Syncme::ThreadPool::GetLockedInRunInvokeError() { return LockedInRunInvokeError; }
+uint64_t Syncme::ThreadPool::GetLockedInCompact() { return LockedInCompact; }
 
 Pool::Pool()
   : MaxUnusedThreads(MAX_UNUSED_THREADS)

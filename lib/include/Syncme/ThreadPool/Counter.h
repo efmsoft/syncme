@@ -24,5 +24,13 @@ namespace Syncme
     SINCMELNK uint64_t GetLockedInRun();
     SINCMELNK uint64_t GetOnTimerCalls();
     SINCMELNK uint64_t GetErrors();
+
+    SINCMELNK uint64_t GetLockedInRunCreateWorker();
+    SINCMELNK uint64_t GetLockedInRunStop();
+    SINCMELNK uint64_t GetLockedInRunFail();
+    SINCMELNK uint64_t GetLockedInRunInvoke();
+    SINCMELNK uint64_t GetLockedInRunInvokeError();
+    SINCMELNK uint64_t GetLockedInCompact();
+
   }
 }
