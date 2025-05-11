@@ -631,7 +631,7 @@ bool Socket::InitAcceptAddress()
     return false;
   }
 
-  return readSocketParameters(ss, AcceptIP, AcceptPort);
+  return ::readSocketParameters(ss, AcceptIP, AcceptPort);
 }
 
 bool Socket::InitPeer()
@@ -651,7 +651,7 @@ bool Socket::InitPeer()
     return false;
   }
 
-  return readSocketParameters(ss, Peer.IP, Peer.Port);
+  return ::readSocketParameters(ss, Peer.IP, Peer.Port);
 }
 
 bool Socket::PeerFromHostString(
@@ -778,12 +778,12 @@ bool Socket::IsIPv6(const char* ip)
   return inet_pton(AF_INET6, ip, &addr6) == 1;
 }
 
-bool Socket::isIPv4MappedIPv6(const std::string& ip)
+bool Socket::IsIPv4MappedIPv6(const std::string& ip)
 {
-  return isIPv4MappedIPv6(ip.c_str());
+  return IsIPv4MappedIPv6(ip.c_str());
 }
 
-bool Socket::isIPv4MappedIPv6(const char* ip)
+bool Socket::IsIPv4MappedIPv6(const char* ip)
 {
   if (!ip)
     return false;
@@ -823,4 +823,9 @@ bool Socket::IsLoopbackIP(const char* ip)
   }
 
   return false;
+}
+
+bool Socket::ReadSocketParameters(const sockaddr_storage& ss, std::string& ip, int& port)
+{
+  return ::readSocketParameters(ss, ip, port);
 }
