@@ -92,7 +92,7 @@ unsigned WaitThread::TicksSinceEmpty()
   if (Events.empty() == false)
     return 0;
 
-  return GetTickCount64() - EmptySince;
+  return unsigned(GetTickCount64() - EmptySince);
 }
 
 bool WaitThread::Add(SocketEvent* object)

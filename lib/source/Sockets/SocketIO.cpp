@@ -252,7 +252,7 @@ int Socket::Write(const void* buffer, size_t size, int timeout, bool* queued)
     *queued = true;
 
   SKT_SET_LAST_ERROR(NONE);
-  return size;
+  return (int)size;
 }
 
 void Socket::Unread(const char* p, size_t n)
