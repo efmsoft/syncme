@@ -1,3 +1,9 @@
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <sched.h>
+#endif
+
 #include <cassert>
 
 #include <Syncme/Logger/Log.h>
@@ -28,8 +34,10 @@ namespace Syncme::ThreadPool
   std::atomic<uint64_t> ThreadsStopped;
   std::atomic<uint64_t> LockedInRun;
   std::atomic<uint64_t> OnTimerCalls;
+  std::atomic<uint64_t> CreateInvoke;
+  std::atomic<uint64_t> DirectInvoke;
+  std::atomic<uint64_t> SlowInvoke;
   std::atomic<uint64_t> Errors;
-
 
   std::atomic<uint64_t> LockedInRunCreateWorker;
   std::atomic<uint64_t> LockedInRunStop;
@@ -51,6 +59,9 @@ uint64_t Syncme::ThreadPool::GetLockedInRunFail() { return LockedInRunFail; }
 uint64_t Syncme::ThreadPool::GetLockedInRunInvoke() { return LockedInRunInvoke; }
 uint64_t Syncme::ThreadPool::GetLockedInRunInvokeError() { return LockedInRunInvokeError; }
 uint64_t Syncme::ThreadPool::GetLockedInCompact() { return LockedInCompact; }
+uint64_t Syncme::ThreadPool::GetDirectInvoke() { return DirectInvoke; }
+uint64_t Syncme::ThreadPool::GetSlowInvoke() { return SlowInvoke; }
+uint64_t Syncme::ThreadPool::GetCreateInvoke() { return CreateInvoke; }
 
 Pool::Pool()
   : MaxUnusedThreads(MAX_UNUSED_THREADS)
@@ -124,20 +135,6 @@ void Pool::SetStopping()
   SetEvent(StopEvent);
 }
 
-void Pool::Prealloc()
-{
-  for (size_t i = 0; i < MaxUnusedThreads; ++i)
-  {
-    TimePoint t0;
-    
-    WorkerPtr t = CreateWorker(t0);
-    if (t == nullptr)
-      break;
-
-    Push(Unused, t);
-  }
-}
-
 void Pool::Stop()
 {
   SetStopping();
@@ -197,22 +194,40 @@ void Pool::Push(WorkerList& list, WorkerPtr t)
   ThreadsTotal = All.size();
 }
 
-WorkerPtr Pool::CreateWorker(const TimePoint& t0)
+WorkerPtr Pool::CreateWorker(
+  const TimePoint& t0
+  , TCallback cb
+  , uint64_t* pid
+  , HEvent& thread
+)
 {
   TOnIdle notifyIdle = std::bind(&Pool::CB_OnFree, this, std::placeholders::_1);
   TOnTimer onTimer = std::bind(&Pool::CB_OnTimer, this, std::placeholders::_1);
   WorkerPtr t = std::make_shared<Worker>(Timer, notifyIdle, onTimer);
+  Push(All, t);
 
-  if (!t->Start())
+  thread = t->Start(cb, pid);
+  if (!thread)
   {
     Errors++;
 
     LockedInRunCreateWorker += t0.ElapsedSince();
     LockedInRun += t0.ElapsedSince();
+
+    LOCK_GUARD();
+
+    auto ita = std::find_if(
+      All.begin()
+      , All.end()
+      , [t](WorkerPtr e) { return e.get() == t.get(); }
+    );
+    
+    if (ita != All.end())
+      All.erase(ita);
+
     return nullptr;
   }
 
-  Push(All, t);
   return t;
 }
 
@@ -245,10 +260,43 @@ void Pool::DoCompact()
   LockedInCompact += t0.ElapsedSince();
 }
 
-HEvent Pool::Run(TCallback cb, uint64_t* pid)
+TaskPtr Pool::QueueTask(TCallback cb)
 {
-  TimePoint t0;
+  TaskPtr task = std::make_shared<Task>();
+  task->Callback = cb;
 
+  std::lock_guard guard(TaskLock);
+  Tasks.push_back(task);
+
+  return task;
+}
+
+bool Pool::DequeueTask(TaskPtr task)
+{
+  std::lock_guard guard(TaskLock);
+
+  auto it = std::find_if(
+    Tasks.begin()
+    , Tasks.end()
+    , [task](TaskPtr t) { return task.get() == t.get(); }
+  );
+
+  if (it != Tasks.end())
+  {
+    Tasks.erase(it);
+    return true;
+  }
+
+  return false;
+}
+
+bool Pool::Run2(
+  uint64_t* pid
+  , HEvent& h
+  , TaskPtr task
+  , TimePoint& t0
+)
+{
   if (pid)
     *pid = 0;
 
@@ -269,59 +317,82 @@ HEvent Pool::Run(TCallback cb, uint64_t* pid)
         if (Mode == OVERFLOW_MODE::FAIL)
         {
           Errors++;
-
-          LockedInRunFail += t0.ElapsedSince();
-          LockedInRun += t0.ElapsedSince();
-          return nullptr;
+          return true;
         }
 
         auto rc = WaitForMultipleObjects(ev, false);
         if (rc == WAIT_RESULT::OBJECT_0)
         {
           auto e = t0.ElapsedSince();
-          LockedInRunStop += e;
-          LockedInRun += e;
 
           if (e > 200)
           {
             LogW("loops=%i, spent=%lli, total=%lli, threads=%lli", loop, e, (int64_t)LockedInRun, allSize);
           }
 
-          return nullptr;
+          return true;
         }
 
         continue;
       }
 
-      t = CreateWorker(t0);
+      if (DequeueTask(task) == false)
+        return false;
 
-      if (t == nullptr)
-        return nullptr;
+      task->Worker = CreateWorker(t0, task->Callback, pid, task->ThreadHandle);
+      CreateInvoke++;
+      return true;
     }
 
     break;
   }
 
-  TimePoint t1;
+  if (DequeueTask(task) == false)
+  {
+    Push(Unused, t);
+    return false;
+  }
 
   uint64_t id{};
-  HEvent h = t->Invoke(cb, id);
-  if (h)
+  task->ThreadHandle = t->Invoke(task->Callback, id);
+  if (task->ThreadHandle)
   {
     if (pid != nullptr)
       *pid = id;
 
-    LockedInRunInvoke += t1.ElapsedSince();
-    LockedInRun += t0.ElapsedSince();
-    return h;
+    SlowInvoke++;
+    return true;
   }
 
   Push(Unused, t);
   Errors++;
+  return true;
+}
 
-  LockedInRunInvokeError += t0.ElapsedSince();
+HEvent Pool::Run(TCallback cb, uint64_t* pid)
+{
+  TimePoint t0;
+  TaskPtr task = QueueTask(cb);
+
+  if (pid)
+    *pid = 0;
+
+  bool dequeued = Run2(pid, task->ThreadHandle, task, t0);
+
+  TimePoint t1;
+  LockedInRunInvoke += t1.ElapsedSince();
   LockedInRun += t0.ElapsedSince();
-  return nullptr;
+
+  if (dequeued == false)
+  {
+    if (pid != nullptr)
+      *pid = task->Worker->GetTid();
+
+    DirectInvoke++;
+    return task->ThreadHandle;
+  }
+
+  return task->ThreadHandle;
 }
 
 void Pool::Locked_Find(Worker* p, bool& all, bool& unused)
@@ -362,8 +433,41 @@ void Pool::CB_OnTimer(Worker* p)
   }
 }
 
-void Pool::CB_OnFree(Worker* p)
+static void YieldThread()
 {
+#ifdef _WIN32
+  ::SwitchToThread();
+#else
+  ::sched_yield();
+#endif
+}
+
+TaskPtr Pool::CB_OnFree(Worker* p)
+{
+  for (int i = 0; i < 3 && Stopping == false; i++)
+  {
+    do
+    {
+      std::lock_guard guard(TaskLock);
+
+      if (Tasks.empty() == false)
+      {
+        TaskPtr task = Tasks.front();
+        Tasks.pop_front();
+
+        task->ThreadHandle = p->Handle();
+        task->Worker = p->shared_from_this();
+        ResetEvent(task->ThreadHandle);
+
+        DirectInvoke++;
+        return task;
+      }
+
+    } while (false);
+
+    YieldThread();
+  }
+
   LOCK_GUARD();
 
 #ifdef _DEBUG  
@@ -379,8 +483,10 @@ void Pool::CB_OnFree(Worker* p)
   }
 
   WorkerPtr t = p->Get();
-  Unused.push_back(t);
+  Unused.push_front(t);
   SetEvent(FreeEvent);
+
+  return TaskPtr();
 }
 
 void Pool::Locked_StopExpired(Worker* caller)

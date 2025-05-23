@@ -1,4 +1,5 @@
 #include <cassert>
+#include <random>
 
 #include <Syncme/Logger/Log.h>
 #include <Syncme/ProcessThreadId.h>
@@ -6,6 +7,12 @@
 #include <Syncme/Sync.h>
 #include <Syncme/ThreadPool/Counter.h>
 #include <Syncme/ThreadPool/Worker.h>
+#include <Syncme/TimePoint.h>
+#include <Syncme/TickCount.h>
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 #pragma warning(disable : 4996)
 
@@ -23,6 +30,7 @@ Worker::Worker(
   , TOnTimer onTimer
 )
   : ManagementTimer(managementTimer)
+  , StartedEvent(CreateNotificationEvent())
   , StopEvent(CreateNotificationEvent())
   , IdleEvent(CreateNotificationEvent())
   , BusyEvent(CreateSynchronizationEvent())
@@ -41,6 +49,7 @@ Worker::~Worker()
 {
   assert(Stopped == true);
 
+  CloseHandle(StartedEvent);
   CloseHandle(StopEvent);
   CloseHandle(IdleEvent);
   CloseHandle(BusyEvent);
@@ -59,6 +68,11 @@ HEvent Worker::Handle()
 {
   HEvent h = DuplicateHandle(IdleEvent);
   return h;
+}
+
+uint64_t Worker::GetTid() const
+{
+  return ThreadID;
 }
 
 void Worker::SetExpireTimer(long ms)
@@ -80,7 +94,7 @@ bool Worker::IsExpired() const
   return GetEventState(ExpireTimer) == STATE::SIGNALLED;
 }
 
-bool Worker::Start()
+HEvent Worker::Start(TCallback cb, uint64_t* id)
 {
   assert(Exited == false);
   assert(Stopped == false);
@@ -89,23 +103,44 @@ bool Worker::Start()
   assert(Thread == nullptr);
 
   if (Thread)
-    return true;
+    return HEvent();
 
   if (!StopEvent || !IdleEvent || !BusyEvent || !InvokeEvent || !ExpireTimer)
-    return false;
+    return HEvent();
 
-  Thread = std::make_shared<std::thread>(&Worker::EntryPoint, this);
-  if (Thread == nullptr)
+  HEvent h = Handle();
+  if (h == nullptr)
+    return HEvent();
+
+  if (true)
   {
-    LogE("Unable to start thread");
-    return false;
+    auto guard = StateLock.Lock();
+
+    Callback = cb;
+
+    Thread = std::make_shared<std::thread>(&Worker::EntryPoint, this);
+    if (Thread == nullptr)
+    {
+      LogE("Unable to start thread");
+
+      Callback = TCallback();
+      return HEvent();
+    }
+
+    Started = true;
   }
 
-  auto rc = WaitForSingleObject(IdleEvent, FOREVER);
-  assert(rc == WAIT_RESULT::OBJECT_0);
-
-  Started = true;
-  return true;
+  if (id)
+  {
+#ifdef _WIN32
+    *id = GetThreadId((HANDLE)Thread->native_handle());
+#else
+    WaitForSingleObject(StartedEvent, INFINITE);
+    *id = ThreadID;
+#endif
+  }
+  
+  return h;
 }
 
 void Worker::Stop()
@@ -177,21 +212,58 @@ HEvent Worker::Invoke(TCallback cb, uint64_t& id)
   return h;
 }
 
+#ifdef _WIN32
+void SetRandomThreadAffinity() 
+{
+  SYSTEM_INFO sysinfo;
+  GetSystemInfo(&sysinfo);
+  DWORD cpu_count = sysinfo.dwNumberOfProcessors;
+
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  std::uniform_int_distribution<DWORD> dist(0, cpu_count - 1);
+
+  DWORD cpu = dist(gen);
+  DWORD_PTR mask = 1ull << cpu;
+
+  SetThreadAffinityMask(GetCurrentThread(), mask);
+}
+#endif
+
 void Worker::EntryPoint()
 {
   char name[64];
   sprintf(name, "TPool:%p", this);
+
+#ifdef _WIN32
+  //SetRandomThreadAffinity();
+#endif
+
+  static std::atomic<uint64_t> waits_total;
+  static std::atomic<uint64_t> waits_time_total;
+
   ThreadID = GetCurrentThreadId();
+  SetEvent(StartedEvent);
 
   SET_CUR_THREAD_NAME(name);
   assert(Exited == false);
 
   EventArray object(StopEvent, InvokeEvent, ManagementTimer);
-  SetEvent(IdleEvent);
-  
+
+  uint64_t t0 = 0;
+  bool firstTask = true;
+  WAIT_RESULT rc = WAIT_RESULT::OBJECT_1;
+  goto OnInvoke;
+
   for (;;)
   {
-    auto rc = WaitForMultipleObjects(object, false, FOREVER);
+    firstTask = false;
+
+    t0 = Syncme::GetTimeInMillisec();
+    rc = WaitForMultipleObjects(object, false, FOREVER);
+    waits_time_total += Syncme::GetTimeInMillisec() - t0;
+    waits_total++;
+
     if (rc == WAIT_RESULT::OBJECT_0)
       break;
 
@@ -207,8 +279,12 @@ void Worker::EntryPoint()
       break;
     }
 
+  OnInvoke:
     ResetEvent(InvokeEvent);
-    SetEvent(BusyEvent);
+    
+    if (firstTask == false)
+      SetEvent(BusyEvent);
+
     Callback();
 
     // We use IdleEvent to emulate thread handle. Clients can use it to 
@@ -227,7 +303,16 @@ void Worker::EntryPoint()
     SET_CUR_THREAD_NAME(name);
 
     auto guard = StateLock.Lock();
-    NotifyIdle(this);
+    TaskPtr task = NotifyIdle(this);
+    
+    if (task)
+    {
+      Callback = task->Callback;
+      firstTask = true;
+      
+      guard.Release();
+      goto OnInvoke;
+    }
   }
 
   Exited = true;

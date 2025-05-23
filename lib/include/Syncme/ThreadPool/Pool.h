@@ -41,11 +41,13 @@ namespace Syncme
       WorkerList All;
       WorkerList Unused;
 
+      std::mutex TaskLock;
+      TaskList Tasks;
+
     public:
       SINCMELNK Pool();
       SINCMELNK ~Pool();
 
-      SINCMELNK void Prealloc();
       SINCMELNK void Stop();
 
       SINCMELNK HEvent Run(TCallback cb, uint64_t* pid = nullptr);
@@ -67,7 +69,7 @@ namespace Syncme
       SINCMELNK void SetCompact(SCompact compact);
 
     private:
-      void CB_OnFree(Worker* p);
+      TaskPtr CB_OnFree(Worker* p);
       void CB_OnTimer(Worker* p);
 
       void DoCompact();
@@ -78,7 +80,18 @@ namespace Syncme
 
       void Locked_StopExpired(Worker* caller);
       void Locked_Find(Worker* p, bool& all, bool& unused);
-      WorkerPtr CreateWorker(const TimePoint& t0);
+      
+      WorkerPtr CreateWorker(
+        const TimePoint& t0
+        , TCallback cb
+        , uint64_t* pid
+        , HEvent& thread
+      );
+
+      TaskPtr QueueTask(TCallback cb);
+      bool DequeueTask(TaskPtr task);
+
+      bool Run2(uint64_t* pid, HEvent& h, TaskPtr task, TimePoint& t0);
     };
   }
 }

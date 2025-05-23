@@ -14,16 +14,29 @@ namespace Syncme
   namespace ThreadPool
   {
     class Worker;
+    typedef std::shared_ptr<Worker> WorkerPtr;
+
     typedef std::function<void(void)> TCallback;
-    typedef std::function<void(Worker*)> TOnIdle;
+
+    struct Task
+    {
+      TCallback Callback;
+      WorkerPtr Worker;
+      HEvent ThreadHandle;
+    };
+
+    typedef std::shared_ptr<Task> TaskPtr;
+    typedef std::list<TaskPtr> TaskList;
+
+    typedef std::function<TaskPtr(Worker*)> TOnIdle;
     typedef std::function<void(Worker*)> TOnTimer;
 
-    typedef std::shared_ptr<Worker> WorkerPtr;
 
     class Worker : public std::enable_shared_from_this<Worker>
     {
       HEvent ManagementTimer;
 
+      HEvent StartedEvent;
       HEvent StopEvent;
       HEvent IdleEvent;
       HEvent BusyEvent;
@@ -51,7 +64,7 @@ namespace Syncme
       );
       SINCMELNK ~Worker();
 
-      SINCMELNK bool Start();
+      SINCMELNK HEvent Start(TCallback cb, uint64_t* id);
       SINCMELNK void Stop();
 
       SINCMELNK HEvent Invoke(TCallback cb, uint64_t& id);
@@ -61,9 +74,11 @@ namespace Syncme
       SINCMELNK void CancelExpireTimer();
       SINCMELNK bool IsExpired() const;
 
+      SINCMELNK uint64_t GetTid() const;
+      SINCMELNK HEvent Handle();
+
     private:
       void EntryPoint();
-      HEvent Handle();
     };
   }
 }
