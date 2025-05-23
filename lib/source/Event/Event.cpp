@@ -44,6 +44,24 @@ Event::~Event()
 
 void EventDeleter::operator()(Event* p) const
 {
+  bool norefs = false;
+
+  if (true)
+  {
+    std::lock_guard<std::mutex> guard(p->Lock);
+    if (p->Closing == false)
+      p->Closing = true;
+
+    if (p->CrossRef.empty())
+      norefs = true;
+  }
+
+  if (norefs)
+  {
+    delete p;
+    return;
+  }
+
   auto guard = Event::RemoveLock.Lock();
   delete p;
 }
@@ -128,14 +146,19 @@ bool Event::IsSignalled() const
 bool Event::Wait(uint32_t ms)
 {
   using namespace std::chrono_literals;
-  auto timeout = ms * 1ms;
 
   std::unique_lock<std::mutex> guard(Lock);
   
   bool f = true;
   if (Signalled == false)
   {
-    f = Condition.wait_for(guard, timeout, [this] {return Signalled == true;});
+    if (ms == FOREVER)
+      Condition.wait(guard, [this] {return Signalled == true; });
+    else
+    {
+      auto timeout = ms * 1ms;
+      f = Condition.wait_for(guard, timeout, [this] {return Signalled == true; });
+    }
   }
 
   if (f && !Notification)
@@ -149,7 +172,9 @@ void Event::AddRef(Event* dup)
   assert(dup);
 
   auto guard = DataLock.Lock();
-  CrossRef.push_back(dup);
+  
+  if (Closing == false)
+    CrossRef.push_back(dup);
 }
 
 void Event::RemoveRef(Event* dup)
