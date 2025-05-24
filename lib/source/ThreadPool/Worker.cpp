@@ -135,7 +135,7 @@ HEvent Worker::Start(TCallback cb, uint64_t* id)
 #ifdef _WIN32
     *id = GetThreadId((HANDLE)Thread->native_handle());
 #else
-    WaitForSingleObject(StartedEvent, INFINITE);
+    WaitForSingleObject(StartedEvent);
     *id = ThreadID;
 #endif
   }
