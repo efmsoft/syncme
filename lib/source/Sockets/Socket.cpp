@@ -122,10 +122,7 @@ Socket::Socket(SocketPair* pair, int handle, bool enableClose)
   , RxQueue(-1)
   , TxQueue(-1)
 #ifdef _WIN32
-  , WExitEvent(nullptr)
-  , WStopEvent(nullptr)
-  , WStopIO(nullptr)
-  , WStartTX(nullptr)
+  , WBreakWait(nullptr)
 #if SKTCOUNTERS
   , Counters{}
 #endif
@@ -148,7 +145,7 @@ Socket::Socket(SocketPair* pair, int handle, bool enableClose)
 #ifdef _WIN32
   InitWin32Events();
   TxQueue.SetSignallReady(
-    std::bind(&Socket::SignallWindowsEvent, this, WStartTX, 0, false)
+    std::bind(&Socket::SignallWindowsEvent, this, WBreakWait, 0, false)
   );
 #endif
 
@@ -587,7 +584,7 @@ bool Socket::SwitchToUnblockingMode()
     );
 #elif defined(_WIN32)
     BreakEventCookie = BreakRead->RegisterWait(
-      std::bind(&Socket::SignallWindowsEvent, this, WStopIO, _1, _2)
+      std::bind(&Socket::SignallWindowsEvent, this, WBreakWait, _1, _2)
     );
 #endif
   }

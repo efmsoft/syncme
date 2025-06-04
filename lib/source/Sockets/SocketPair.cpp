@@ -246,13 +246,11 @@ int SocketPair::Read(void* buffer, size_t size, SocketPtr& from, int timeout)
   );
 
 #ifdef _WIN32
-  HANDLE object[6]{};
-  object[0] = Server->WExitEvent;
-  object[1] = Server->WStopEvent;
+  HANDLE object[4]{};
+  object[0] = Server->WBreakWait;
+  object[1] = Client->WBreakWait;
   object[2] = ((SocketEvent*)Server->RxEvent.get())->GetWSAEvent();
-  object[3] = Server->WStopIO;
-  object[4] = ((SocketEvent*)Client->RxEvent.get())->GetWSAEvent();
-  object[5] = Client->WStopIO;
+  object[3] = ((SocketEvent*)Client->RxEvent.get())->GetWSAEvent();
 #endif
 
   for (int loops = 0, zeroCnt = 0;; ++loops)
@@ -295,7 +293,7 @@ int SocketPair::Read(void* buffer, size_t size, SocketPtr& from, int timeout)
 #ifdef _WIN32
     WAIT_RESULT rc{};
     auto wr = ::WaitForMultipleObjects(
-      6
+      4
       , object
       , false
       , milliseconds
@@ -304,12 +302,41 @@ int SocketPair::Read(void* buffer, size_t size, SocketPtr& from, int timeout)
     switch (wr)
     {
     case WAIT_TIMEOUT: rc = WAIT_RESULT::TIMEOUT; break;
-    case WAIT_OBJECT_0: rc = WAIT_RESULT::OBJECT_0; break;
-    case WAIT_OBJECT_0 + 1: rc = WAIT_RESULT::OBJECT_1; break;
+
+    case WAIT_OBJECT_0: 
+      if (GetEventState(GetExitEvent()) == STATE::SIGNALLED)
+      {
+        rc = WAIT_RESULT::OBJECT_0;
+        break;
+      }
+      else if (GetEventState(GetCloseEvent()) == STATE::SIGNALLED)
+      {
+        rc = WAIT_RESULT::OBJECT_1;
+        break;
+      }
+      else
+        rc = WAIT_RESULT::OBJECT_3;
+
+      break;
+
+    case WAIT_OBJECT_0 + 1:
+      if (GetEventState(GetExitEvent()) == STATE::SIGNALLED)
+      {
+        rc = WAIT_RESULT::OBJECT_0;
+        break;
+      }
+      else if (GetEventState(GetCloseEvent()) == STATE::SIGNALLED)
+      {
+        rc = WAIT_RESULT::OBJECT_1;
+        break;
+      }
+      else 
+        rc = WAIT_RESULT::OBJECT_5;
+
+      break;
+
     case WAIT_OBJECT_0 + 2: rc = WAIT_RESULT::OBJECT_2; break;
-    case WAIT_OBJECT_0 + 3: rc = WAIT_RESULT::OBJECT_3; break;
-    case WAIT_OBJECT_0 + 4: rc = WAIT_RESULT::OBJECT_4; break;
-    case WAIT_OBJECT_0 + 5: rc = WAIT_RESULT::OBJECT_5; break;
+    case WAIT_OBJECT_0 + 3: rc = WAIT_RESULT::OBJECT_4; break;
     
     case WAIT_FAILED:
     default:

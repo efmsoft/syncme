@@ -14,21 +14,18 @@ using namespace std::placeholders;
 
 void Socket::InitWin32Events()
 {
-  WExitEvent = CreateEvent(nullptr, true, false, nullptr);
-  WStopEvent = CreateEvent(nullptr, true, false, nullptr);
-  WStopIO = CreateEvent(nullptr, false, false, nullptr);
-  WStartTX = CreateEvent(nullptr, false, false, nullptr);
+  WBreakWait = CreateEventA(nullptr, false, false, nullptr);
 
   ExitEventCookie = Pair->GetExitEvent()->RegisterWait(
-    std::bind(&Socket::SignallWindowsEvent, this, WExitEvent, _1, _2)
+    std::bind_front(&Socket::SignallWindowsEvent, this, WBreakWait)
   );
 
   CloseEventCookie = Pair->GetCloseEvent()->RegisterWait(
-    std::bind(&Socket::SignallWindowsEvent, this, WStopEvent, _1, _2)
+    std::bind_front(&Socket::SignallWindowsEvent, this, WBreakWait)
   );
 
   StartTXEventCookie = StartTX->RegisterWait(
-    std::bind(&Socket::SignallWindowsEvent, this, WStartTX, _1, _2)
+    std::bind_front(&Socket::SignallWindowsEvent, this, WBreakWait)
   );
 }
 
@@ -46,28 +43,10 @@ void Socket::FreeWin32Events()
     StartTXEventCookie = 0;
   }
 
-  if (WExitEvent)
+  if (WBreakWait)
   {
-    ::CloseHandle(WExitEvent);
-    WExitEvent = nullptr;
-  }
-
-  if (WStopEvent)
-  {
-    ::CloseHandle(WStopEvent);
-    WStopEvent = nullptr;
-  }
-
-  if (WStopIO)
-  {
-    ::CloseHandle(WStopIO);
-    WStopIO = nullptr;
-  }
-
-  if (WStartTX)
-  {
-    ::CloseHandle(WStartTX);
-    WStartTX = nullptr;
+    ::CloseHandle(WBreakWait);
+    WBreakWait = nullptr;
   }
 }
 
@@ -191,12 +170,9 @@ bool Socket::IO(int timeout, IOStat& stat, IOFlags flags)
   SocketEvent* socketEvent = (SocketEvent*)RxEvent.get();
   HANDLE waEvent = socketEvent->GetWSAEvent();
 
-  HANDLE object[5]{};
-  object[evSocket] = waEvent;
-  object[evTX] = WStartTX;
-  object[evBreak] = WStopIO;
-  object[evExit] = WExitEvent;
-  object[evStop] = WStopEvent;
+  HANDLE object[2]{};
+  object[0] = waEvent;
+  object[1] = WBreakWait;
 
   WSANETWORKEVENTS nev{};
   for (bool expired = false;;)
@@ -216,8 +192,6 @@ bool Socket::IO(int timeout, IOStat& stat, IOFlags flags)
     // We socked still can contain data to read
     if (Peer.Disconnected == false)
     {
-      ::ResetEvent(WStartTX);
-
       // Try to write as much as possible
       if (WriteIO(stat) == false)
         return false;
@@ -264,7 +238,7 @@ bool Socket::IO(int timeout, IOStat& stat, IOFlags flags)
     DWORD rc = WAIT_TIMEOUT;
 
     TimePoint t0;
-    rc = ::WaitForMultipleObjects(5, object, false, ms);
+    rc = ::WaitForMultipleObjects(2, object, false, ms);
 
     auto spent = t0.ElapsedSince();
     stat.WaitTime += spent;
@@ -292,6 +266,18 @@ bool Socket::IO(int timeout, IOStat& stat, IOFlags flags)
     }
 
     int ev = int(rc - WAIT_OBJECT_0);
+    if (rc != WAIT_OBJECT_0)
+    {
+      if (GetEventState(Pair->GetExitEvent()) == STATE::SIGNALLED)
+        ev = evExit;
+      else if (GetEventState(Pair->GetCloseEvent()) == STATE::SIGNALLED)
+        ev = evStop;
+      else if (GetEventState(BreakRead) == STATE::SIGNALLED)
+        ev = evBreak;
+      else if (GetEventState(StartTX) == STATE::SIGNALLED)
+        ev = evTX;
+    }
+
     IODEBUG(EvName[ev], spent);
     SKTCOUNTERADD(Events[ev], 1);
 

@@ -155,10 +155,7 @@ namespace Syncme
     bool FailLogged;
 
 #ifdef _WIN32
-    void* WExitEvent;
-    void* WStopEvent;
-    void* WStopIO;
-    void* WStartTX;
+    void* WBreakWait;
 
   #if SKTCOUNTERS
     IOCounters Counters;
