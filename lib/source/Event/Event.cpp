@@ -11,6 +11,7 @@ using namespace Syncme;
 
 std::atomic<uint64_t> Syncme::EventObjects{};
 uint64_t Syncme::GetEventObjects() {return Syncme::EventObjects;}
+
 std::atomic<uint32_t> Event::NextCookie{ 1 };
 CS Event::RemoveLock;
 
@@ -49,8 +50,13 @@ void EventDeleter::operator()(Event* p) const
   if (true)
   {
     std::lock_guard<std::mutex> guard(p->Lock);
+
     if (p->Closing == false)
+    {
+      // After setting this flag, we can release the lock and 
+      // be confident that cross-references will no longer appear
       p->Closing = true;
+    }
 
     if (p->CrossRef.empty())
       norefs = true;
@@ -153,11 +159,14 @@ bool Event::Wait(uint32_t ms)
   if (Signalled == false)
   {
     if (ms == FOREVER)
+    {
+      // The version without a timeout performs faster
       Condition.wait(guard, [this] {return Signalled == true; });
+    }
     else
     {
       auto timeout = ms * 1ms;
-      f = Condition.wait_for(guard, timeout, [this] {return Signalled == true; });
+      f = Condition.wait_for(guard, timeout, [this] {return Signalled == true;});
     }
   }
 
@@ -182,7 +191,6 @@ void Event::RemoveRef(Event* dup)
   auto guard = DataLock.Lock();
   
   auto it = std::find(CrossRef.begin(), CrossRef.end(), dup);
-
   if (it != CrossRef.end())
     CrossRef.erase(it);
 }

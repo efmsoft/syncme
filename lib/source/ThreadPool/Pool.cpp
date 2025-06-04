@@ -444,28 +444,23 @@ static void YieldThread()
 
 TaskPtr Pool::CB_OnFree(Worker* p)
 {
-  for (int i = 0; i < 3 && Stopping == false; i++)
+  if (TaskLock.try_lock())
   {
-    do
+    if (Tasks.empty() == false)
     {
-      std::lock_guard guard(TaskLock);
+      TaskPtr task = Tasks.front();
+      Tasks.pop_front();
 
-      if (Tasks.empty() == false)
-      {
-        TaskPtr task = Tasks.front();
-        Tasks.pop_front();
+      task->ThreadHandle = p->Handle();
+      task->Worker = p->shared_from_this();
+      ResetEvent(task->ThreadHandle);
 
-        task->ThreadHandle = p->Handle();
-        task->Worker = p->shared_from_this();
-        ResetEvent(task->ThreadHandle);
+      DirectInvoke++;
+      TaskLock.unlock();
+      return task;
+    }
 
-        DirectInvoke++;
-        return task;
-      }
-
-    } while (false);
-
-    YieldThread();
+    TaskLock.unlock();
   }
 
   LOCK_GUARD();

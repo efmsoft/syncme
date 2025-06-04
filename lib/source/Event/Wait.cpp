@@ -82,7 +82,10 @@ namespace Syncme
 
     WAIT_RESULT Wait(uint32_t ms)
     {
-      WAIT_RESULT rc = WaitForSingleObject(Event, ms);
+      WAIT_RESULT rc = WAIT_RESULT::OBJECT_0;
+
+      if (GetEventState(Event) != STATE::SIGNALLED)
+        rc = WaitForSingleObject(Event, ms);
 
       CookieMap cookies;
       if (true)
@@ -121,10 +124,10 @@ WAIT_RESULT Syncme::WaitForMultipleObjects(
   WaitContext context(waitAll, events.size());
   auto& cookies = context.GetCookieMap();
 
-  size_t index = 0;;
+  size_t index = 0;
   for (auto& e : events)
   {
-    auto cookie = e->RegisterWait(std::bind(&WaitContext::EventSignalled, &context, index++, _1, _2));
+    auto cookie = e->RegisterWait(std::bind_front(&WaitContext::EventSignalled, &context, index++));
     cookies[e.get()] = cookie;
 
     if (context.Completed(events.size()))

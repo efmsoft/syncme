@@ -212,35 +212,10 @@ HEvent Worker::Invoke(TCallback cb, uint64_t& id)
   return h;
 }
 
-#ifdef _WIN32
-void SetRandomThreadAffinity() 
-{
-  SYSTEM_INFO sysinfo;
-  GetSystemInfo(&sysinfo);
-  DWORD cpu_count = sysinfo.dwNumberOfProcessors;
-
-  std::random_device rd;
-  std::mt19937 gen(rd());
-  std::uniform_int_distribution<DWORD> dist(0, cpu_count - 1);
-
-  DWORD cpu = dist(gen);
-  DWORD_PTR mask = 1ull << cpu;
-
-  SetThreadAffinityMask(GetCurrentThread(), mask);
-}
-#endif
-
 void Worker::EntryPoint()
 {
   char name[64];
   sprintf(name, "TPool:%p", this);
-
-#ifdef _WIN32
-  //SetRandomThreadAffinity();
-#endif
-
-  static std::atomic<uint64_t> waits_total;
-  static std::atomic<uint64_t> waits_time_total;
 
   ThreadID = GetCurrentThreadId();
   SetEvent(StartedEvent);
@@ -250,7 +225,6 @@ void Worker::EntryPoint()
 
   EventArray object(StopEvent, InvokeEvent, ManagementTimer);
 
-  uint64_t t0 = 0;
   bool firstTask = true;
   WAIT_RESULT rc = WAIT_RESULT::OBJECT_1;
   goto OnInvoke;
@@ -259,11 +233,7 @@ void Worker::EntryPoint()
   {
     firstTask = false;
 
-    t0 = Syncme::GetTimeInMillisec();
     rc = WaitForMultipleObjects(object, false, FOREVER);
-    waits_time_total += Syncme::GetTimeInMillisec() - t0;
-    waits_total++;
-
     if (rc == WAIT_RESULT::OBJECT_0)
       break;
 
