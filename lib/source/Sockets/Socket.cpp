@@ -386,7 +386,7 @@ bool Socket::SetOptions()
     LogI("%s: new size of snd buffer is %i", Pair->WhoAmI(this), sndsize);
   }
 
-  if (config->GetBool("tcp-nodelay", true))
+  if (config->GetBool("tcp_nodelay", true))
   {
     int yes = 1;
     if (setsockopt(Handle, IPPROTO_TCP, TCP_NODELAY, (char*)&yes, sizeof(yes)))
@@ -399,7 +399,7 @@ bool Socket::SetOptions()
   }
 
 #ifdef _WIN32
-  ULONG delay = (ULONG)config->GetTimeInMilliseconds("keepalive-delay", 15000);
+  ULONG delay = (ULONG)config->GetTimeInMilliseconds("keepalive_delay", 15000);
   if (delay)
   {
     struct tcp_keepalive keepalive_vals = {
@@ -427,7 +427,7 @@ bool Socket::SetOptions()
       return false;
     }
 
-    LogI("%s: keepalive-delay set to %i ms", Pair->WhoAmI(this), int(delay));
+    LogI("%s: keepalive_delay set to %i ms", Pair->WhoAmI(this), int(delay));
   }
 #endif
   return true;
