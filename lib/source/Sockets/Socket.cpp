@@ -29,85 +29,6 @@ const char* Socket::EvName[5] =
   "evSocket", "evTX", "evBreak", "evExit", "evStop"
 };
 
-static bool isIPv4MappedIPv6(const sockaddr_in6& saddr6)
-{
-  // Check for IPv4-mapped IPv6 format (::ffff:0:0/96 or ::ffff:a.b.c.d)
-  const unsigned char ipv4MappedPrefix[12] =
-  {
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff
-  };
-
-  const unsigned char* addr_bytes;
-#ifdef _WIN32
-  addr_bytes = saddr6.sin6_addr.u.Byte;
-#else
-  addr_bytes = saddr6.sin6_addr.s6_addr;
-#endif
-    
-  return memcmp(addr_bytes, ipv4MappedPrefix, 12) == 0;    
-}
-
-static bool readSocketParameters(const sockaddr_storage& ss, std::string& ip, int& port)
-{
-  union
-  {
-    sockaddr_storage ss;
-    sockaddr_in      sin;
-    sockaddr_in6     sin6;
-  } addr;
-
-  addr.ss = ss;
-
-  char ip_str[INET6_ADDRSTRLEN];
-
-  switch (addr.ss.ss_family)
-  {
-    case AF_INET:
-      if (!inet_ntop(AF_INET, &addr.sin.sin_addr, ip_str, sizeof(ip_str)))
-      {
-        LogosE("inet_ntop(AF_INET) failed");
-        return false;
-      }
-      port = ntohs(addr.sin.sin_port);
-      break;
-
-    case AF_INET6:
-      if (::isIPv4MappedIPv6(addr.sin6))
-      {
-        struct in_addr addr4;
-#ifdef _WIN32
-        memcpy(&addr4.s_addr, &addr.sin6.sin6_addr.u.Byte[12], sizeof(addr4.s_addr));
-#else
-        memcpy(&addr4.s_addr, &addr.sin6.sin6_addr.s6_addr[12], sizeof(addr4.s_addr));
-#endif
-        if (!inet_ntop(AF_INET, &addr4, ip_str, sizeof(ip_str)))
-        {
-          LogosE("inet_ntop(AF_INET) failed");
-          return false;
-        }
-      }
-      else
-      {
-        if (!inet_ntop(AF_INET6, &addr.sin6.sin6_addr, ip_str, sizeof(ip_str)))
-        {
-          LogosE("inet_ntop(AF_INET6) failed");
-          return false;
-        }
-      }
-
-      port = ntohs(addr.sin6.sin6_port);
-      break;
-
-    default:
-      LogE("Unsupported address family: %d", addr.ss.ss_family);
-      return false;
-  }
-
-  ip = ip_str;
-
-  return true;
-}
-
 Socket::Socket(SocketPair* pair, int handle, bool enableClose)
   : Pair(pair)
   , CH(Pair->GetChannel())
@@ -620,7 +541,7 @@ bool Socket::InitAcceptAddress()
   if (Handle == -1)
     return false;
 
-  sockaddr_storage ss;
+  sockaddr_storage ss{};
   socklen_t addr_len = sizeof(ss);
   if (getsockname(Handle, reinterpret_cast<sockaddr*>(&ss), &addr_len) == -1)
   {
@@ -628,7 +549,7 @@ bool Socket::InitAcceptAddress()
     return false;
   }
 
-  return ::readSocketParameters(ss, AcceptIP, AcceptPort);
+  return ReadSocketParameters(ss, AcceptIP, AcceptPort);
 }
 
 bool Socket::InitPeer()
@@ -640,7 +561,7 @@ bool Socket::InitPeer()
   
   InitAcceptAddress();
 
-  sockaddr_storage ss;
+  sockaddr_storage ss{};
   socklen_t addr_len = sizeof(ss);
   if (getpeername(Handle, reinterpret_cast<sockaddr*>(&ss), &addr_len) == -1)
   {
@@ -648,7 +569,7 @@ bool Socket::InitPeer()
     return false;
   }
 
-  return ::readSocketParameters(ss, Peer.IP, Peer.Port);
+  return ReadSocketParameters(ss, Peer.IP, Peer.Port);
 }
 
 bool Socket::PeerFromHostString(
@@ -792,7 +713,7 @@ bool Socket::IsIPv4MappedIPv6(const char* ip)
   if (inet_pton(AF_INET6, ip, &saddr6.sin6_addr) != 1)
     return false;
 
-  return ::isIPv4MappedIPv6(saddr6);
+  return IsIPv4MappedIPv6(saddr6);
 }
 
 bool Socket::IsLoopbackIP(const std::string& ip)
@@ -822,7 +743,81 @@ bool Socket::IsLoopbackIP(const char* ip)
   return false;
 }
 
+bool Socket::IsIPv4MappedIPv6(const sockaddr_in6& saddr6)
+{
+  // Check for IPv4-mapped IPv6 format (::ffff:0:0/96 or ::ffff:a.b.c.d)
+  const unsigned char ipv4MappedPrefix[12] =
+  {
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff
+  };
+
+  const unsigned char* addr_bytes;
+#ifdef _WIN32
+  addr_bytes = saddr6.sin6_addr.u.Byte;
+#else
+  addr_bytes = saddr6.sin6_addr.s6_addr;
+#endif
+
+  return memcmp(addr_bytes, ipv4MappedPrefix, 12) == 0;
+}
+
 bool Socket::ReadSocketParameters(const sockaddr_storage& ss, std::string& ip, int& port)
 {
-  return ::readSocketParameters(ss, ip, port);
+  union
+  {
+    sockaddr_storage ss;
+    sockaddr_in      sin;
+    sockaddr_in6     sin6;
+  } addr{};
+
+  addr.ss = ss;
+
+  char ip_str[INET6_ADDRSTRLEN];
+
+  switch (addr.ss.ss_family)
+  {
+  case AF_INET:
+    if (!inet_ntop(AF_INET, &addr.sin.sin_addr, ip_str, sizeof(ip_str)))
+    {
+      LogosEg("inet_ntop(AF_INET) failed");
+      return false;
+    }
+    port = ntohs(addr.sin.sin_port);
+    break;
+
+  case AF_INET6:
+    if (IsIPv4MappedIPv6(addr.sin6))
+    {
+      struct in_addr addr4{};
+#ifdef _WIN32
+      memcpy(&addr4.s_addr, &addr.sin6.sin6_addr.u.Byte[12], sizeof(addr4.s_addr));
+#else
+      memcpy(&addr4.s_addr, &addr.sin6.sin6_addr.s6_addr[12], sizeof(addr4.s_addr));
+#endif
+      if (!inet_ntop(AF_INET, &addr4, ip_str, sizeof(ip_str)))
+      {
+        LogosEg("inet_ntop(AF_INET) failed");
+        return false;
+      }
+    }
+    else
+    {
+      if (!inet_ntop(AF_INET6, &addr.sin6.sin6_addr, ip_str, sizeof(ip_str)))
+      {
+        LogosEg("inet_ntop(AF_INET6) failed");
+        return false;
+      }
+    }
+
+    port = ntohs(addr.sin6.sin6_port);
+    break;
+
+  default:
+    LogmeEg("Unsupported address family: %d", addr.ss.ss_family);
+    return false;
+  }
+
+  ip = ip_str;
+
+  return true;
 }

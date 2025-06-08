@@ -21,6 +21,9 @@
 
   #define LogosE(format) \
       {LogmeE(format ". Error: %s", OSERR2);}
+
+  #define LogosEg(format) \
+      {LogmeEg(format ". Error: %s", OSERR2);}
 #else
   #ifndef LogD
     #define LogD(...)
@@ -39,4 +42,6 @@
   #endif
 
   #define LogosE(format)
+
+  #define LogosEg(format)
 #endif

@@ -27,6 +27,7 @@
 #define SKTCOUNTERS 0
 
 struct sockaddr_storage;
+struct sockaddr_in6;
 
 namespace Syncme
 {
@@ -248,6 +249,7 @@ namespace Syncme
     SINCMELNK static bool IsIPv6(const std::string& ip);
 
     SINCMELNK static bool IsIPv4MappedIPv6(const char* ip);
+    SINCMELNK static bool IsIPv4MappedIPv6(const sockaddr_in6& saddr6);
     SINCMELNK static bool IsIPv4MappedIPv6(const std::string& ip);
 
     SINCMELNK static bool ReadSocketParameters(const sockaddr_storage& ss, std::string& ip, int& port);
