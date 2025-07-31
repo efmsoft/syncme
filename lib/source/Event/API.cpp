@@ -53,6 +53,14 @@ STATE Syncme::GetEventState(HEvent event)
   return event->IsSignalled() ? STATE::SIGNALLED : STATE::NOT_SIGNALLED;
 }
 
+bool Syncme::GetEventClosed(HEvent event)
+{
+  if (event == nullptr)
+    return true;
+
+  return event->GetClosing();
+}
+
 bool Syncme::SetEvent(HEvent event)
 {
   if (event == nullptr)

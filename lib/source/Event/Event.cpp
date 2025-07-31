@@ -100,6 +100,11 @@ void Event::OnCloseHandle()
   Waits.clear();
 }
 
+bool Event::GetClosing() const
+{
+  return Closing;
+}
+
 void Event::SetEvent(Event* source)
 {
   std::lock_guard<std::mutex> guard(Lock);
@@ -120,7 +125,7 @@ void Event::SetEvent(Event* source)
 
     for (auto& c : CrossRef)
     {
-      if (c != source)
+      if (c != source && c->Closing == false)
         c->SetEvent(source);
     }
   }

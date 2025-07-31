@@ -180,6 +180,9 @@ bool TimerQueue::SignallOne(TimerList& reset)
       QueuedTimers--;
 
       SetEvent(t->EvTimer);
+      Lock.unlock();
+
+      // Calling callback with released mutex
 
       if (t->Callback)
         t->Callback(t->EvTimer);
@@ -196,14 +199,17 @@ bool TimerQueue::SignallOne(TimerList& reset)
 
 void TimerQueue::SignallTimers()
 {
-  if (!TryLock())
-    return;
-
   TimerList reset;
 
   for (;;)
+  {
+    if (!TryLock())
+      return;
+
+    // if SignallOne returns false, mutex is locked
     if (!SignallOne(reset))
       break;
+  }
 
   for (auto& t : reset)
   {

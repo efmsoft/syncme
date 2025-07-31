@@ -54,6 +54,8 @@ namespace Syncme
     bool IsSignalled() const;
     virtual bool Wait(uint32_t ms);
 
+    bool GetClosing() const;
+
   protected:
     friend struct EventDeleter;
     friend class WaitContext;
@@ -63,6 +65,7 @@ namespace Syncme
     friend bool Syncme::SetEvent(HEvent event);
     friend bool Syncme::ResetEvent(HEvent event);
     friend STATE Syncme::GetEventState(HEvent event);
+    friend bool Syncme::GetEventClosed(HEvent event);
 
     void AddRef(Event* dup);
     void RemoveRef(Event* dup);

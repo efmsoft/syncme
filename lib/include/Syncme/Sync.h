@@ -23,6 +23,7 @@ namespace Syncme
   SINCMELNK bool ResetEvent(HEvent event);
   SINCMELNK bool CloseHandle(HEvent& event);
   SINCMELNK STATE GetEventState(HEvent event);
+  SINCMELNK bool GetEventClosed(HEvent event);
 
   SINCMELNK HEvent CreateManualResetTimer();
   SINCMELNK HEvent CreateAutoResetTimer();
