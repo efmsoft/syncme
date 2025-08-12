@@ -113,10 +113,7 @@ bool Queue::Append(BufferPtr buffer, size_t* qsize)
   if (qsize)
     *qsize = Total;
 
-  if (buffer == nullptr)
-    return false;
-
-  if (true)
+  if (buffer)
   {
     std::lock_guard guard(Lock);
 
@@ -133,7 +130,7 @@ bool Queue::Append(BufferPtr buffer, size_t* qsize)
   if (Signal)
     Signal();
 
-  return true;
+  return buffer != nullptr;
 }
 
 bool Queue::Insert(const void* p, size_t cb, size_t* qsize, Queue* borrowFrom)
