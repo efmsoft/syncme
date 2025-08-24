@@ -215,7 +215,7 @@ namespace Syncme
     SINCMELNK int Write(const void* buffer, size_t size, int timeout = FOREVER, bool* queued = nullptr);
 
     SINCMELNK virtual int GetFD() const = 0;
-    SINCMELNK virtual SKT_ERROR Ossl2SktError(int ret) const = 0;
+    SINCMELNK virtual SKT_ERROR Ossl2SktError(int ret) = 0;
     SINCMELNK virtual void LogIoError(const char* fn, const char* text) = 0;
     SINCMELNK virtual std::string GetProtocol() const;
 
@@ -229,7 +229,7 @@ namespace Syncme
     );
 
     SINCMELNK void SetLastError(SKT_ERROR e, const char* file, int line);
-    SINCMELNK SocketError GetLastError() const;
+    SINCMELNK SocketError GetLastError();
 
     SINCMELNK virtual bool SetOptions();
     SINCMELNK virtual bool SwitchToUnblockingMode();

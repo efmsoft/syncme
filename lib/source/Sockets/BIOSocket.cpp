@@ -123,7 +123,7 @@ int BIOSocket::GetFD() const
   return socket;
 }
 
-SKT_ERROR BIOSocket::Ossl2SktError(int ret) const
+SKT_ERROR BIOSocket::Ossl2SktError(int ret)
 {
   return GetLastError();
 }

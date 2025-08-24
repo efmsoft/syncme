@@ -191,12 +191,16 @@ IOCountersGroup& Socket::MyCountersGroup()
 void Socket::SetLastError(SKT_ERROR e, const char* file, int line)
 {
   SocketError error(e, file, line);
+
+  std::lock_guard guard(ErrorLock);
   LastError[Syncme::GetCurrentThreadId()] = error;
 }
 
-SocketError Socket::GetLastError() const
+SocketError Socket::GetLastError()
 {
   auto id = Syncme::GetCurrentThreadId();
+
+  std::lock_guard guard(ErrorLock);
   auto it = LastError.find(id);
   if (it == LastError.end())
     return SocketError();

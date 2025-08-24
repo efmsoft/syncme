@@ -220,7 +220,7 @@ int SSLSocket::TranslateSSLError(int n, const char* method)
   return -1;
 }
 
-SKT_ERROR SSLSocket::Ossl2SktError(int ret) const
+SKT_ERROR SSLSocket::Ossl2SktError(int ret)
 {
   int err = SSL_get_error(Ssl, ret);
   switch (err)

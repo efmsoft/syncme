@@ -17,7 +17,7 @@ namespace Syncme
 
     SINCMELNK void Shutdown() override;
 
-    SINCMELNK SKT_ERROR Ossl2SktError(int ret) const override;
+    SINCMELNK SKT_ERROR Ossl2SktError(int ret) override;
     SINCMELNK int GetFD() const override;
     SINCMELNK void LogIoError(const char* fn, const char* text) override;
     SINCMELNK std::string GetProtocol() const override;
