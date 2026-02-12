@@ -1,3 +1,4 @@
+#if !defined(USE_BORINGSSL)
 #include <openssl/err.h>
 #include <openssl/ssl2.h>
 #include <openssl/ssl3.h>
@@ -369,3 +370,5 @@ std::string Syncme::GetBioError()
   BIO_free(bio);
   return errorString;
 }
+
+#endif

@@ -50,7 +50,17 @@ get_filename_component(SYNCME_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/lib/include" ABSO
 
 find_package(allstat MODULE)
 find_package(logme MODULE)
-find_package(OpenSSL REQUIRED) 
+if(NOT USE_BORINGSSL)
+  find_package(OpenSSL REQUIRED)
+else()
+  if(NOT DEFINED BORINGSSL_INCLUDE_DIR)
+    message(FATAL_ERROR "USE_BORINGSSL is ON but BORINGSSL_INCLUDE_DIR is not set")
+  endif()
+  if(NOT DEFINED BORINGSSL_LIBRARIES)
+    message(FATAL_ERROR "USE_BORINGSSL is ON but BORINGSSL_LIBRARIES is not set")
+  endif()
+endif()
+
 
 enable_testing()
 add_subdirectory(lib ../out/Static)

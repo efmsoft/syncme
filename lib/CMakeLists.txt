@@ -3,11 +3,18 @@ file(GLOB_RECURSE HEADERS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "*.h")
 
 add_library(syncme STATIC ${SOURCES} ${HEADERS}) 
 
+if(USE_BORINGSSL)
+  set(_ssl_include_dir ${BORINGSSL_INCLUDE_DIR})
+else()
+  set(_ssl_include_dir ${OPENSSL_INCLUDE_DIR})
+endif()
+
+
 target_include_directories(syncme PUBLIC
   ${ALLSTAT_INCLUDE_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}/include
   ${LOGME_INCLUDE_DIR}
-  ${OPENSSL_INCLUDE_DIR}
+  ${_ssl_include_dir}
 )
 
 target_compile_definitions(syncme PRIVATE SYNCME_BUILD)
