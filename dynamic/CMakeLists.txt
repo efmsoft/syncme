@@ -10,24 +10,15 @@ message(STATUS "Syncme dynamic added SYNCME_INCLUDE_DIR=${SYNCME_INCLUDE_DIR}")
 
 add_library(syncmed SHARED ${SOURCES} ${HEADERS} ${SYNCME_VERSION_RC})
 
-if(USE_BORINGSSL)
-  set(_ssl_include_dir ${BORINGSSL_INCLUDE_DIR})
-  set(_ssl_libraries ${BORINGSSL_LIBRARIES})
-else()
-  set(_ssl_include_dir ${OPENSSL_INCLUDE_DIR})
-  set(_ssl_libraries ${_ssl_libraries})
-endif()
-
-
 target_include_directories(syncmed PRIVATE
   ${SYNCME_INCLUDE_DIR}
   ${LOGME_INCLUDE_DIR}
   ${ALLSTAT_INCLUDE_DIR}
-  ${_ssl_include_dir}
+  ${OPENSSL_INCLUDE_DIR}
 )
 
 target_compile_definitions(syncmed PRIVATE _SYNCME_DLL_BUILD_ _WINSOCK_DEPRECATED_NO_WARNINGS)
-target_link_libraries(syncmed LINK_PUBLIC ${LOGME_LIBRARIES} ${_ssl_libraries} ${LOGME_LIB} ${ALLSTAT_LIB})
+target_link_libraries(syncmed LINK_PUBLIC ${LOGME_LIBRARIES} ${OPENSSL_LIBRARIES} ${LOGME_LIB} ${ALLSTAT_LIB})
 
 if(NOT WIN32)
   target_compile_options(syncmed PRIVATE -fPIC -fvisibility=default)
