@@ -4,6 +4,7 @@ file(GLOB_RECURSE HEADERS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "*.h")
 add_library(syncme STATIC ${SOURCES} ${HEADERS}) 
 
 if(USE_BORINGSSL)
+  include(boringssl)
   set(_ssl_include_dir ${BORINGSSL_INCLUDE_DIR})
 else()
   set(_ssl_include_dir ${OPENSSL_INCLUDE_DIR})

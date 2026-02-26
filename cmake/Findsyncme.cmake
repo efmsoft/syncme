@@ -17,19 +17,10 @@ get_filename_component(SYNCME_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 set(SYNCME_INCLUDE_DIR ${SYNCME_ROOT}/lib/include)
 
 # SSL backend selection is controlled by the parent project.
-# When USE_BORINGSSL is enabled, the parent must provide BORINGSSL_INCLUDE_DIR and BORINGSSL_LIBRARIES.
+# When USE_BORINGSSL is enabled, the parent must provide boringssl.cmake
+# which can be found via include(boringssl)
 if(USE_BORINGSSL)
-  add_compile_definitions(USE_BORINGSSL)
-  if(NOT DEFINED BORINGSSL_INCLUDE_DIR)
-    message(FATAL_ERROR "USE_BORINGSSL is ON but BORINGSSL_INCLUDE_DIR is not set")
-  endif()
-  if(NOT DEFINED BORINGSSL_LIBRARIES)
-    message(FATAL_ERROR "USE_BORINGSSL is ON but BORINGSSL_LIBRARIES is not set")
-  endif()
-
-  # Reuse existing OPENSSL_* variables expected by syncme's build scripts.
-  set(OPENSSL_INCLUDE_DIR ${BORINGSSL_INCLUDE_DIR})
-  set(OPENSSL_LIBRARIES ${BORINGSSL_LIBRARIES})
+  message(STATUS "Syncme will be configured with BORINGSSL support")
 endif()
 
 

@@ -11,6 +11,7 @@ message(STATUS "Syncme dynamic added SYNCME_INCLUDE_DIR=${SYNCME_INCLUDE_DIR}")
 add_library(syncmed SHARED ${SOURCES} ${HEADERS} ${SYNCME_VERSION_RC})
 
 if(USE_BORINGSSL)
+  include(boringssl)
   set(_ssl_include_dir ${BORINGSSL_INCLUDE_DIR})
   set(_ssl_libraries ${BORINGSSL_LIBRARIES})
 else()
