@@ -1,5 +1,7 @@
 #include <cassert>
+#include <exception>
 #include <random>
+#include <system_error>
 
 #include <Syncme/Logger/Log.h>
 #include <Syncme/ProcessThreadId.h>
@@ -118,7 +120,36 @@ HEvent Worker::Start(TCallback cb, uint64_t* id)
 
     Callback = cb;
 
-    Thread = std::make_shared<std::thread>(&Worker::EntryPoint, this);
+    try
+    {
+      Thread = std::make_shared<std::thread>(&Worker::EntryPoint, this);
+    }
+    catch (const std::system_error& e)
+    {
+      LogE(
+        "Unable to start thread: %s (code=%d)"
+        , e.what()
+        , (int)e.code().value()
+      );
+
+      Callback = TCallback();
+      return HEvent();
+    }
+    catch (const std::exception& e)
+    {
+      LogE("Unable to start thread: %s", e.what());
+
+      Callback = TCallback();
+      return HEvent();
+    }
+    catch (...)
+    {
+      LogE("Unable to start thread: unknown exception");
+
+      Callback = TCallback();
+      return HEvent();
+    }
+
     if (Thread == nullptr)
     {
       LogE("Unable to start thread");
@@ -255,7 +286,18 @@ void Worker::EntryPoint()
     if (firstTask == false)
       SetEvent(BusyEvent);
 
-    Callback();
+    try
+    {
+      Callback();
+    }
+    catch (const std::exception& e)
+    {
+      LogE("Worker task threw exception: %s", e.what());
+    }
+    catch (...)
+    {
+      LogE("Worker task threw unknown exception");
+    }
 
     // We use IdleEvent to emulate thread handle. Clients can use it to 
     // check that thread is exited. So we return duplicated handle from Handle(),
