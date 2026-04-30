@@ -239,14 +239,23 @@ SKT_ERROR SSLSocket::Ossl2SktError(int ret)
     return SKT_ERROR::WOULDBLOCK;
 
   case SSL_ERROR_SYSCALL:
+  {
 #ifdef _WIN32
-    if (::GetLastError() == WSAEWOULDBLOCK)
+    int ec = ::GetLastError(); 
+    if (ec == WSAEWOULDBLOCK)
       return SKT_ERROR::WOULDBLOCK;
+
+    if (ec == ERROR_SUCCESS)
+      return SKT_ERROR::NONE;
 #else
     if (errno == EWOULDBLOCK)
       return SKT_ERROR::WOULDBLOCK;
+
+    if (ec == 0)
+      return SKT_ERROR::NONE;
 #endif
     break;
+  }
 
   default:
     break;
