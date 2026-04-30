@@ -251,7 +251,7 @@ SKT_ERROR SSLSocket::Ossl2SktError(int ret)
     if (errno == EWOULDBLOCK)
       return SKT_ERROR::WOULDBLOCK;
 
-    if (ec == 0)
+    if (errno == 0)
       return SKT_ERROR::NONE;
 #endif
     break;
