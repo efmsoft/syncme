@@ -38,6 +38,8 @@ namespace Syncme
       public:
         SINCMELNK Queue(size_t limit = LIMIT, TSignalTxReady signal = TSignalTxReady());
         SINCMELNK void SetSignallReady(TSignalTxReady signal);
+        SINCMELNK void SetLimit(size_t limit);
+        SINCMELNK bool GetAvailableLimit(size_t& available);
 
         SINCMELNK bool Append(Queue& queue, size_t* qsize = nullptr);
         SINCMELNK bool Append(BufferPtr buffer, size_t* qsize = nullptr);

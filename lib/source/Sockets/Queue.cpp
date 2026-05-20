@@ -28,6 +28,30 @@ void Queue::SetSignallReady(TSignalTxReady signal)
   Signal = signal;
 }
 
+void Queue::SetLimit(size_t limit)
+{
+  std::lock_guard guard(Lock);
+
+  Limit = limit;
+}
+
+bool Queue::GetAvailableLimit(size_t& available)
+{
+  std::lock_guard guard(Lock);
+
+  if (Limit == -1)
+    return false;
+
+  if (Total >= Limit)
+  {
+    available = 0;
+    return true;
+  }
+
+  available = Limit - Total;
+  return true;
+}
+
 BufferPtr Queue::PopFree()
 {
   std::lock_guard guard(Lock);

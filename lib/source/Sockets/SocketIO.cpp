@@ -149,7 +149,19 @@ bool Socket::ReadIO(IOStat& stat)
   
   for (;;)
   {
-    int n = InternalRead(RxBuffer, Sockets::IO::BUFFER_SIZE, 0);
+    size_t readSize = Sockets::IO::BUFFER_SIZE;
+    size_t available = 0;
+
+    if (RxQueue.GetAvailableLimit(available))
+    {
+      if (available == 0)
+        break;
+
+      if (readSize > available)
+        readSize = available;
+    }
+
+    int n = InternalRead(RxBuffer, readSize, 0);
     IODEBUG("rx", n);
 
     if (n > 0)
