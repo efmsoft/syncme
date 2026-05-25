@@ -22,6 +22,12 @@ using namespace Syncme::Implementation;
 
 const uint64_t PEER_DISCONNECT_TIMEOUT = 2000;
 
+#ifdef USE_LOGME
+SUBSYSTEM SocketPair::SUBSID{ Logme::SID::Build("skt") };
+#else
+SUBSYSTEM SocketPair::SUBSID = 0;
+#endif
+
 SocketPair::SocketPair(CHANNEL& ch, HEvent exitEvent, ConfigPtr config)
   : CH(ch)
   , ExitEvent(exitEvent)

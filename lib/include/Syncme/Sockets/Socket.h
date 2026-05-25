@@ -12,6 +12,7 @@
 #include <Syncme/Api.h>
 #include <Syncme/CritSection.h>
 #include <Syncme/Logger/Channel.h>
+#include <Syncme/Logger/Subsystem.h>
 #include <Syncme/Sockets/ErrorLimit.h>
 #include <Syncme/Sockets/SocketError.h>
 #include <Syncme/Sockets/Queue.h>
@@ -121,6 +122,7 @@ namespace Syncme
   {
     SocketPair* Pair;
     CHANNEL& CH;
+    static SUBSYSTEM SUBSID;
 
     CS Lock;
     int Handle;

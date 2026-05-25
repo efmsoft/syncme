@@ -29,6 +29,12 @@ const char* Socket::EvName[5] =
   "evSocket", "evTX", "evBreak", "evExit", "evStop"
 };
 
+#ifdef USE_LOGME
+SUBSYSTEM Socket::SUBSID{ Logme::SID::Build("skt") };
+#else
+SUBSYSTEM Socket::SUBSID = 0;
+#endif
+
 Socket::Socket(SocketPair* pair, int handle, bool enableClose)
   : Pair(pair)
   , CH(Pair->GetChannel())

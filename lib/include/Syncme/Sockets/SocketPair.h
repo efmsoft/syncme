@@ -19,6 +19,7 @@ namespace Syncme
   struct SocketPair
   {
     CHANNEL& CH;
+    static SUBSYSTEM SUBSID;
     HEvent ExitEvent;
     ConfigPtr Config;
 
