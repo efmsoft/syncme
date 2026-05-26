@@ -40,10 +40,17 @@ ItemPtr Queue::Schedule(ItemPtr item)
 {
   if (item)
   {
-    auto guard = Lock.Lock();
-    Items.push_back(item);
+    bool needWakeup = false;
 
-    SetEvent(EventWakeup);
+    {
+      auto guard = Lock.Lock();
+
+      needWakeup = Items.empty();
+      Items.push_back(item);
+    }
+
+    if (needWakeup)
+      SetEvent(EventWakeup);
   }
   return item;
 }
