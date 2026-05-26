@@ -49,7 +49,7 @@ ItemPtr Queue::Schedule(ItemPtr item)
       Items.push_back(item);
     }
 
-    if (needWakeup)
+    if (needWakeup && GetEventState(EventWakeup) == STATE::NOT_SIGNALLED)
       SetEvent(EventWakeup);
   }
   return item;
