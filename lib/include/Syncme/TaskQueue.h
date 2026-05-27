@@ -1,13 +1,14 @@
 #pragma once
 
+#include <condition_variable>
 #include <functional>
 #include <list>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 
 #include <Syncme/Api.h>
-#include <Syncme/CritSection.h>
 #include <Syncme/Sync.h>
 
 namespace Syncme
@@ -45,11 +46,10 @@ namespace Syncme
 
     class Queue
     {
-      CritSection Lock;
+      std::mutex Lock;
+      std::condition_variable Wakeup;
       ItemList Items;
-
-      HEvent EventStop;
-      HEvent EventWakeup;
+      bool StopRequested;
       std::thread Worker;
 
     public:

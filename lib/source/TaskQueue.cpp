@@ -5,8 +5,7 @@ using namespace Syncme;
 using namespace Syncme::Task;
 
 Queue::Queue()
-  : EventStop(CreateNotificationEvent())
-  , EventWakeup(CreateSynchronizationEvent())
+  : StopRequested(false)
   , Worker(&Queue::WorkerProc, this)
 {
 }
@@ -18,7 +17,12 @@ Queue::~Queue()
 
 void Queue::Stop()
 {
-  SetEvent(EventStop);
+  {
+    std::lock_guard<std::mutex> guard(Lock);
+    StopRequested = true;
+  }
+
+  Wakeup.notify_one();
 
   if (Worker.joinable())
     Worker.join();
@@ -43,21 +47,21 @@ ItemPtr Queue::Schedule(ItemPtr item)
     bool needWakeup = false;
 
     {
-      auto guard = Lock.Lock();
+      std::lock_guard<std::mutex> guard(Lock);
 
       needWakeup = Items.empty();
       Items.push_back(item);
     }
 
-    if (needWakeup && GetEventState(EventWakeup) == STATE::NOT_SIGNALLED)
-      SetEvent(EventWakeup);
+    if (needWakeup)
+      Wakeup.notify_one();
   }
   return item;
 }
 
 bool Queue::Cancel(ItemPtr item)
 {
-  auto guard = Lock.Lock();
+  std::lock_guard<std::mutex> guard(Lock);
 
   for (auto it = Items.begin(); it != Items.end(); ++it)
   {
@@ -74,31 +78,35 @@ bool Queue::Cancel(ItemPtr item)
 
 ItemPtr Queue::PopItem()
 {
-  auto guard = Lock.Lock();
+  std::unique_lock<std::mutex> guard(Lock);
 
-  if (Items.empty())
+  Wakeup.wait(
+    guard
+    , [this]()
+    {
+      return StopRequested || !Items.empty();
+    }
+  );
+
+  if (StopRequested || Items.empty())
     return ItemPtr();
 
   ItemPtr item = Items.front();
   Items.pop_front();
 
-  return item; 
+  return item;
 }
 
 void Queue::WorkerProc()
 {
   SET_CUR_THREAD_NAME("Task::Queue::Worker");
-  EventArray events(EventStop, EventWakeup);
 
-  while (WaitForMultipleObjects(events, false) != WAIT_RESULT::OBJECT_0)
+  for (;;)
   {
-    for (;;)
-    {
-      ItemPtr item = PopItem();
-      if (item == nullptr)
-        break;
+    ItemPtr item = PopItem();
+    if (item == nullptr)
+      break;
 
-      item->Invoke();
-    }
+    item->Invoke();
   }
 }
