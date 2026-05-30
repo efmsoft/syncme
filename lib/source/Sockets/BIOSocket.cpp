@@ -63,7 +63,9 @@ int BIOSocket::InternalRead(void* buffer, size_t size, int timeout)
 
   if (n == 0)
   {
-    SKT_SET_LAST_ERROR(WOULDBLOCK);
+    Peer.Disconnected = true;
+    Peer.When = GetTimeInMillisec();
+    SKT_SET_LAST_ERROR(GRACEFUL_DISCONNECT);
     return 0;
   }
 
