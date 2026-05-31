@@ -17,6 +17,12 @@ uint32_t Socket::CalculateTimeout(int timeout, uint64_t start, bool& expired)
 
   if (timeout != FOREVER)
   {
+    if (timeout == 0)
+    {
+      expired = false;
+      return 0;
+    }
+
     if (t - start >= timeout)
     {
       expired = true;

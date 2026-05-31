@@ -202,7 +202,7 @@ bool Socket::IO(int timeout, IOStat& stat, IOFlags flags)
     IODEBUG(nullptr, 0);
 
     TimePoint t0;
-    auto rc = FastWaitForMultipleObjects(timeout, stat);
+    auto rc = FastWaitForMultipleObjects(ms, stat);
     stat.WaitTime += t0.ElapsedSince();
     stat.Wait++;
 
