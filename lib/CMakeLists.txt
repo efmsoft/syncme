@@ -10,11 +10,13 @@ else()
 endif()
 
 
-target_include_directories(syncme PRIVATE
-  ${ALLSTAT_INCLUDE_DIR}
-  ${CMAKE_CURRENT_SOURCE_DIR}/include
-  ${LOGME_INCLUDE_DIR}
-  ${_ssl_include_dir}
+target_include_directories(syncme
+  PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+  PRIVATE
+    ${ALLSTAT_INCLUDE_DIR}
+    ${LOGME_INCLUDE_DIR}
+    ${_ssl_include_dir}
 )
 
 target_compile_definitions(syncme PRIVATE SYNCME_BUILD)

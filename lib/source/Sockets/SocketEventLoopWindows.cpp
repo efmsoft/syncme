@@ -111,7 +111,7 @@ namespace
       if (Entries.count(socket))
         return false;
 
-      HANDLE handle = reinterpret_cast<HANDLE>(socket->GetFD());
+      HANDLE handle = reinterpret_cast<HANDLE>(static_cast<intptr_t>(socket->GetFD()));
       HANDLE rc = CreateIoCompletionPort(handle, Port, 0, 0);
       if (rc != Port)
       {
@@ -285,7 +285,7 @@ namespace
       state->Removing = true;
 
       CancelIoEx(
-        reinterpret_cast<HANDLE>(state->Skt->GetFD())
+        reinterpret_cast<HANDLE>(static_cast<intptr_t>(state->Skt->GetFD()))
         , nullptr
       );
 

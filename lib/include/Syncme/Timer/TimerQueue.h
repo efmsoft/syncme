@@ -46,7 +46,7 @@ namespace Syncme
       bool TryLock();
       bool GetSleepTime(uint32_t& ms);
       void SignallTimers();
-      bool SignallOne(TimerList& reset);
+      bool SignallOne();
     };
   }
 }

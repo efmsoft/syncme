@@ -1,3 +1,4 @@
+#include <atomic>
 #include <thread>
 
 #include <gtest/gtest.h>
@@ -12,7 +13,6 @@
 
 using namespace Syncme;
 
-static const int ServerPort = 2345;
 static const size_t NumClients = 129; // OPTIONS::GROW_SIZE * 2 + 1
 static const char* Data1 = "Hello";
 
@@ -85,6 +85,7 @@ static void listener_thread(
   ThreadPool::Pool& pool
   , HEvent readyEvent
   , HEvent serverComplete
+  , std::atomic<int>& serverPort
 )
 {
   SET_CUR_THREAD_NAME("listener");
@@ -115,7 +116,7 @@ static void listener_thread(
   sockaddr_in addr{};
   addr.sin_family = AF_INET;
   addr.sin_addr.s_addr = htonl(INADDR_ANY);
-  addr.sin_port = htons(ServerPort);
+  addr.sin_port = 0;
   int rc = bind(h, (struct sockaddr*)&addr, sizeof(addr));
   if (rc == -1)
   {
@@ -123,13 +124,22 @@ static void listener_thread(
     exit(1);
   }
 
-  rc = listen(h, 1);
+  rc = listen(h, int(NumClients));
   if (rc == -1)
   {
     LogosE("listen() failed");
     exit(1);
   }
 
+  sockaddr_in bound{};
+  socklen_t boundLen = sizeof(bound);
+  if (getsockname(h, (sockaddr*)&bound, &boundLen) == -1)
+  {
+    LogosE("getsockname() failed");
+    exit(1);
+  }
+
+  serverPort.store(ntohs(bound.sin_port));
   SetEvent(readyEvent);
 
   EventArray threads;
@@ -158,7 +168,7 @@ static void listener_thread(
   LogmeI("server_thread signalled clientComplete");
 }
 
-static void client_thread(HEvent& exitEvent, size_t index)
+static void client_thread(HEvent exitEvent, int serverPort, size_t index)
 {
   RenameThread("ct", index, false);
 
@@ -175,7 +185,7 @@ static void client_thread(HEvent& exitEvent, size_t index)
   sockaddr_in addr{};
   addr.sin_family = AF_INET;
   addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-  addr.sin_port = htons(ServerPort);
+  addr.sin_port = htons(serverPort);
   int rc = connect(h, (sockaddr*)&addr, sizeof(addr));
   if (rc == -1)
   {
@@ -225,6 +235,7 @@ TEST(EventQueue, Grow)
 {
   HEvent readyEvent = CreateNotificationEvent();
   HEvent completeEvent = CreateNotificationEvent();
+  std::atomic<int> serverPort{ 0 };
 
   ThreadPool::Pool pool;
   std::shared_ptr<std::jthread> listener;
@@ -234,13 +245,14 @@ TEST(EventQueue, Grow)
     , std::ref(pool)
     , readyEvent
     , completeEvent
+    , std::ref(serverPort)
   );
 
   WaitForSingleObject(readyEvent);
 
   EventArray threads;
   while (threads.size() < NumClients)
-    threads.push_back(pool.Run(std::bind(&client_thread, completeEvent, threads.size())));
+    threads.push_back(pool.Run(std::bind(&client_thread, completeEvent, serverPort.load(), threads.size())));
 
   listener.reset();
   WaitForMultipleObjects(threads, true);

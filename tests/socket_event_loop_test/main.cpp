@@ -1,7 +1,9 @@
 #include <atomic>
 #include <cstring>
 #include <memory>
+#include <string>
 #include <thread>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -16,11 +18,32 @@ using namespace Syncme;
 namespace
 {
   constexpr const char DATA[] = "socket event loop data";
+  constexpr const char CLIENT_TO_SERVER[] = "raw client to server payload";
+  constexpr const char SERVER_TO_CLIENT[] = "raw server to client payload";
 
   static void CloseSocketHandle(int handle)
   {
     if (handle != -1)
       closesocket(handle);
+  }
+
+  static bool SetReceiveTimeout(int handle, int timeout)
+  {
+#ifdef _WIN32
+    DWORD value = DWORD(timeout);
+#else
+    timeval value{};
+    value.tv_sec = timeout / 1000;
+    value.tv_usec = (timeout % 1000) * 1000;
+#endif
+
+    return setsockopt(
+      handle
+      , SOL_SOCKET
+      , SO_RCVTIMEO
+      , (const char*)&value
+      , sizeof(value)
+    ) == 0;
   }
 
   static bool CreateListenSocket(int& handle, int& port)
@@ -114,6 +137,210 @@ namespace
     return true;
   }
 
+  static bool ConnectLoopbackSocket(SocketPair& pair, SocketPtr& socket, int& externalHandle)
+  {
+    externalHandle = -1;
+
+    int listenHandle = -1;
+    int port = 0;
+    if (CreateListenSocket(listenHandle, port) == false)
+      return false;
+
+    int clientHandle = int(::socket(AF_INET, SOCK_STREAM, 0));
+    if (clientHandle == -1)
+    {
+      CloseSocketHandle(listenHandle);
+      return false;
+    }
+
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = htons(port);
+
+    if (::connect(clientHandle, (sockaddr*)&addr, sizeof(addr)) == -1)
+    {
+      CloseSocketHandle(clientHandle);
+      CloseSocketHandle(listenHandle);
+      return false;
+    }
+
+    sockaddr_in peer{};
+    socklen_t size = sizeof(peer);
+    int accepted = int(::accept(listenHandle, (sockaddr*)&peer, &size));
+    CloseSocketHandle(listenHandle);
+
+    if (accepted == -1)
+    {
+      CloseSocketHandle(clientHandle);
+      return false;
+    }
+
+    socket = pair.CreateBIOSocket();
+    if (socket->Attach(accepted) == false)
+    {
+      CloseSocketHandle(clientHandle);
+      CloseSocketHandle(accepted);
+      return false;
+    }
+
+    if (socket->Configure() == false)
+    {
+      CloseSocketHandle(clientHandle);
+      return false;
+    }
+
+    if (SetReceiveTimeout(clientHandle, 5000) == false)
+    {
+      CloseSocketHandle(clientHandle);
+      return false;
+    }
+
+    externalHandle = clientHandle;
+    return true;
+  }
+
+  static bool SendAll(int handle, const char* data, size_t size)
+  {
+    size_t sent = 0;
+    while (sent < size)
+    {
+      int n = ::send(handle, data + sent, int(size - sent), 0);
+      if (n <= 0)
+        return false;
+
+      sent += size_t(n);
+    }
+
+    return true;
+  }
+
+  static bool ReceiveExact(int handle, const char* data, size_t size)
+  {
+    std::vector<char> buffer(size);
+    size_t received = 0;
+
+    while (received < size)
+    {
+      int n = ::recv(handle, buffer.data() + received, int(size - received), 0);
+      if (n <= 0)
+        return false;
+
+      received += size_t(n);
+    }
+
+    return memcmp(buffer.data(), data, size) == 0;
+  }
+
+  static bool DrainSocketTx(SocketEventLoop& loop, Socket* socket)
+  {
+    for (int i = 0; i < 16 && socket->TxQueue.IsEmpty() == false; ++i)
+    {
+      if (loop.Update(socket, socket->GetEventMaskForIO() | EVENT_CLOSE) == false)
+        return false;
+
+      SocketEventLoopResult result;
+      if (loop.Wait(result, 1000) == false)
+        return false;
+
+      if (result.Skt != socket)
+        continue;
+
+      IOStat stat{};
+      if (socket->ProcessIOEvents(result.Events, stat) == false)
+        return false;
+    }
+
+    return socket->TxQueue.IsEmpty();
+  }
+
+  static bool PumpOneDirection(
+    SocketEventLoop& loop
+    , Socket* from
+    , Socket* to
+    , int receiverHandle
+    , const char* expected
+  )
+  {
+    const size_t expectedSize = strlen(expected);
+
+    for (int i = 0; i < 16; ++i)
+    {
+      SocketEventLoopResult result;
+      if (loop.Wait(result, 1000) == false)
+        return false;
+
+      if (result.Skt == nullptr)
+        continue;
+
+      IOStat stat{};
+      if (result.Skt->ProcessIOEvents(result.Events, stat) == false)
+        return false;
+
+      if (loop.Update(
+        result.Skt
+        , result.Skt->GetEventMaskForIO() | EVENT_CLOSE
+      ) == false)
+        return false;
+
+      if (result.Skt != from)
+        continue;
+
+      char buffer[1024]{};
+      int n = from->Read(buffer, sizeof(buffer), 0);
+      if (n <= 0)
+        continue;
+
+      bool queued = false;
+      int written = to->Write(buffer, size_t(n), 0, &queued);
+      if (written != n)
+        return false;
+
+      if (queued || to->TxQueue.IsEmpty() == false)
+      {
+        if (DrainSocketTx(loop, to) == false)
+          return false;
+      }
+
+      return ReceiveExact(receiverHandle, expected, expectedSize);
+    }
+
+    return false;
+  }
+
+  static bool WaitCloseEvent(SocketEventLoop& loop, Socket* socket)
+  {
+    if (loop.Update(
+      socket
+      , socket->GetEventMaskForIO() | EVENT_CLOSE
+    ) == false)
+      return false;
+
+    for (int i = 0; i < 16; ++i)
+    {
+      SocketEventLoopResult result;
+      if (loop.Wait(result, 1000) == false)
+        return false;
+
+      if (result.Skt != socket)
+        continue;
+
+      IOStat stat{};
+      socket->ProcessIOEvents(result.Events, stat);
+
+      if (socket->PeerDisconnected())
+        return true;
+
+      if (loop.Update(
+        socket
+        , socket->GetEventMaskForIO() | EVENT_CLOSE
+      ) == false)
+        return false;
+    }
+
+    return false;
+  }
+
   static void AcceptAndSend(int listenHandle, HEvent doneEvent)
   {
     sockaddr_in peer{};
@@ -205,4 +432,56 @@ TEST(SocketEventLoop, ReadEventCanDriveSocketIO)
     server.join();
 
   pair.Close();
+}
+
+TEST(SocketEventLoop, BidirectionalForwardingMatchesRawManagerUsage)
+{
+  Logme::ID ch = CH;
+  HEvent exitEvent = CreateNotificationEvent();
+  SocketPair pair(ch, exitEvent, std::make_shared<Config>());
+
+  int clientPeer = -1;
+  int serverPeer = -1;
+
+  ASSERT_TRUE(ConnectLoopbackSocket(pair, pair.Client, clientPeer));
+  ASSERT_TRUE(ConnectLoopbackSocket(pair, pair.Server, serverPeer));
+
+  auto loop = SocketEventLoop::Create();
+  ASSERT_NE(loop, nullptr);
+
+  int clientContext = 1;
+  int serverContext = 2;
+
+  ASSERT_TRUE(loop->Add(pair.Client.get(), &clientContext, EVENT_READ | EVENT_CLOSE));
+  ASSERT_TRUE(loop->Add(pair.Server.get(), &serverContext, EVENT_READ | EVENT_CLOSE));
+
+  ASSERT_TRUE(SendAll(clientPeer, CLIENT_TO_SERVER, strlen(CLIENT_TO_SERVER)));
+  EXPECT_TRUE(PumpOneDirection(
+    *loop
+    , pair.Client.get()
+    , pair.Server.get()
+    , serverPeer
+    , CLIENT_TO_SERVER
+  ));
+
+  ASSERT_TRUE(SendAll(serverPeer, SERVER_TO_CLIENT, strlen(SERVER_TO_CLIENT)));
+  EXPECT_TRUE(PumpOneDirection(
+    *loop
+    , pair.Server.get()
+    , pair.Client.get()
+    , clientPeer
+    , SERVER_TO_CLIENT
+  ));
+
+  shutdown(clientPeer, SD_SEND);
+  EXPECT_TRUE(WaitCloseEvent(*loop, pair.Client.get()));
+
+  EXPECT_TRUE(loop->Remove(pair.Client.get()));
+  EXPECT_TRUE(loop->Remove(pair.Server.get()));
+
+  SetEvent(exitEvent);
+  pair.Close();
+
+  CloseSocketHandle(clientPeer);
+  CloseSocketHandle(serverPeer);
 }

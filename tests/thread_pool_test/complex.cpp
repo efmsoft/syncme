@@ -77,6 +77,38 @@ public:
 typedef std::shared_ptr<Object> ObjectPtr;
 typedef std::vector<ObjectPtr> ObjectArray;
 
+static bool WaitForPoolIdle(size_t timeout)
+{
+  uint64_t t0 = GetTimeInMillisec();
+  for (;;)
+  {
+    uint64_t total = GetThreadsTotal();
+    uint64_t unused = GetThreadsUnused();
+    if (total != 0 && total == unused)
+      return true;
+
+    if (GetTimeInMillisec() - t0 >= timeout)
+      return false;
+
+    Sleep(10);
+  }
+}
+
+static bool WaitForThreadsTotal(uint64_t expected, size_t timeout)
+{
+  uint64_t t0 = GetTimeInMillisec();
+  for (;;)
+  {
+    if (GetThreadsTotal() == expected)
+      return true;
+
+    if (GetTimeInMillisec() - t0 >= timeout)
+      return false;
+
+    Sleep(10);
+  }
+}
+
 TEST(Pool, complex)
 {
   std::srand((unsigned)GetTimeInMillisec());
@@ -101,7 +133,10 @@ TEST(Pool, complex)
   SetEvent(evStop);
   ob.clear();
 
+  EXPECT_TRUE(WaitForPoolIdle(5000));
+
   tpool.StopUnused();
+  EXPECT_TRUE(WaitForThreadsTotal(0, 5000));
   EXPECT_EQ(ThreadsTotal, 0);
 
   tpool.Stop();

@@ -12,6 +12,7 @@ namespace Syncme
       SINCMELNK ~WaitableTimer();
 
       SINCMELNK void OnCloseHandle() override;
+      SINCMELNK void SignalFromTimerQueue();
       SINCMELNK uint32_t Signature() const override;
       SINCMELNK static bool IsTimer(HEvent h);
     };

@@ -4,6 +4,7 @@
 #include <Syncme/TickCount.h>
 #include <Syncme/Timer/Counter.h>
 #include <Syncme/Timer/TimerQueue.h>
+#include <Syncme/Timer/WaitableTimer.h>
 
 #pragma warning(disable : 26110)
 
@@ -167,7 +168,7 @@ bool TimerQueue::GetSleepTime(uint32_t& ms)
   return true;
 }
 
-bool TimerQueue::SignallOne(TimerList& reset)
+bool TimerQueue::SignallOne()
 {
   auto now = GetTimeInMillisec();
 
@@ -176,19 +177,35 @@ bool TimerQueue::SignallOne(TimerList& reset)
     TimerPtr t = *it;
     if (t->NextDueTime <= now)
     {
+      auto timer = static_cast<WaitableTimer*>(t->EvTimer.get());
+      auto callback = t->Callback;
+      HEvent callbackTimer;
+
+      if (callback)
+        callbackTimer = t->EvTimer;
+
       Queue.erase(it);
       QueuedTimers--;
 
-      SetEvent(t->EvTimer);
+      if (t->Period)
+      {
+        t->Set(t->Period);
+        Queue.push_back(t);
+        QueuedTimers++;
+      }
+      else
+        t.reset();
+
       Lock.unlock();
 
-      // Calling callback with released mutex
+      // Calling callback with released mutex. The timer is signalled only
+      // after the callback and after one-shot timer references are released.
 
-      if (t->Callback)
-        t->Callback(t->EvTimer);
+      if (callback)
+        callback(callbackTimer);
 
-      if (t->Period)
-        reset.push_back(t);
+      callbackTimer.reset();
+      timer->SignalFromTimerQueue();
 
       return true;
     }
@@ -199,28 +216,15 @@ bool TimerQueue::SignallOne(TimerList& reset)
 
 void TimerQueue::SignallTimers()
 {
-  TimerList reset;
-
   for (;;)
   {
     if (!TryLock())
       return;
 
     // if SignallOne returns false, mutex is locked
-    if (!SignallOne(reset))
+    if (!SignallOne())
       break;
   }
-
-  for (auto& t : reset)
-  {
-    t->Set(t->Period);
-
-    Queue.push_back(t);
-    QueuedTimers++;
-  }
-  
-  if (!reset.empty())
-    SetEvent(EvUpdate);
 
   Lock.unlock();
 }

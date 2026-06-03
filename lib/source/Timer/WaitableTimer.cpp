@@ -32,6 +32,12 @@ void WaitableTimer::OnCloseHandle()
   Event::OnCloseHandle();
 }
 
+
+void WaitableTimer::SignalFromTimerQueue()
+{
+  SetEvent(this);
+}
+
 uint32_t WaitableTimer::Signature() const
 {
   return SIGNATURE;
