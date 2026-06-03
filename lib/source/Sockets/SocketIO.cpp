@@ -195,6 +195,42 @@ bool Socket::ReadIO(IOStat& stat)
   return true;
 }
 
+bool Socket::ProcessIOEvents(int events, IOStat& stat)
+{
+  std::lock_guard<std::mutex> guard(IOLock);
+
+  SKT_SET_LAST_ERROR(NONE);
+
+  if (events & EVENT_CLOSE)
+  {
+    Peer.Disconnected = true;
+    Peer.When = GetTimeInMillisec();
+  }
+
+  if (Peer.Disconnected == false)
+  {
+    if ((events & EVENT_WRITE) || TxQueue.IsEmpty() == false)
+    {
+      if (WriteIO(stat) == false)
+        return false;
+    }
+  }
+
+  if (events & EVENT_READ)
+  {
+    if (ReadIO(stat) == false)
+      return false;
+  }
+
+  if (Peer.Disconnected && RxQueue.IsEmpty())
+  {
+    SKT_SET_LAST_ERROR(GRACEFUL_DISCONNECT);
+    return false;
+  }
+
+  return true;
+}
+
 bool Socket::StopPendingRead()
 {
   return SetEvent(BreakRead);

@@ -118,6 +118,13 @@ namespace Syncme
     } f;
   };
 
+  enum class SocketWaitDirection
+  {
+    None,
+    Read,
+    Write
+  };
+
   struct Socket
   {
     SocketPair* Pair;
@@ -136,6 +143,7 @@ namespace Syncme
     bool CloseNotify;
     bool BlockingMode;
     bool AcceptWouldblock;
+    SocketWaitDirection WaitDirection;
 
     std::string AcceptIP;
     int AcceptPort;
@@ -240,6 +248,10 @@ namespace Syncme
     SINCMELNK virtual int InternalRead(void* buffer, size_t size, int timeout) = 0;
 
     SINCMELNK virtual bool IO(int timeout, IOStat& stat, IOFlags flags = IOFlags{});
+    SINCMELNK bool ProcessIOEvents(int events, IOStat& stat);
+    SINCMELNK int GetEventMaskForIO() const;
+    SINCMELNK SocketWaitDirection GetWaitDirection() const;
+    SINCMELNK void ResetWaitDirection();
     SINCMELNK virtual bool Flush(int timeout = -1);
 
     SINCMELNK static const IOCounters& GetTotals();
@@ -263,6 +275,7 @@ namespace Syncme
   protected:
     bool ReadIO(IOStat& stat);
     bool WriteIO(IOStat& stat);
+    void SetWaitDirection(SocketWaitDirection direction);
 
 #if SKTEPOLL
     WAIT_RESULT FastWaitForMultipleObjects(int timeout, IOStat& stat);

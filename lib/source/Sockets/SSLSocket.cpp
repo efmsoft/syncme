@@ -197,6 +197,7 @@ int SSLSocket::TranslateSSLError(int n, const char* method)
 {
   if (n > 0)
   {
+    ResetWaitDirection();
     SKT_SET_LAST_ERROR(NONE);
     return n;
   }
@@ -232,10 +233,15 @@ SKT_ERROR SSLSocket::Ossl2SktError(int ret)
     return SKT_ERROR::NONE;
 
   case SSL_ERROR_ZERO_RETURN:
+    ResetWaitDirection();
     return SKT_ERROR::GRACEFUL_DISCONNECT;
 
   case SSL_ERROR_WANT_WRITE:
+    SetWaitDirection(SocketWaitDirection::Write);
+    return SKT_ERROR::WOULDBLOCK;
+
   case SSL_ERROR_WANT_READ:
+    SetWaitDirection(SocketWaitDirection::Read);
     return SKT_ERROR::WOULDBLOCK;
 
   case SSL_ERROR_SYSCALL:

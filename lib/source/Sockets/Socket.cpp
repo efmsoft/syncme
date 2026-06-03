@@ -44,6 +44,7 @@ Socket::Socket(SocketPair* pair, int handle, bool enableClose)
   , CloseNotify(true)
   , BlockingMode(true)
   , AcceptWouldblock(false)
+  , WaitDirection(SocketWaitDirection::None)
   , AcceptPort(0)
   , Pid(-1)
   , RxQueue(-1)
@@ -217,6 +218,39 @@ SocketError Socket::GetLastError()
 std::string Socket::GetProtocol() const
 {
   return std::string();
+}
+
+SocketWaitDirection Socket::GetWaitDirection() const
+{
+  return WaitDirection;
+}
+
+void Socket::SetWaitDirection(SocketWaitDirection direction)
+{
+  WaitDirection = direction;
+}
+
+void Socket::ResetWaitDirection()
+{
+  SetWaitDirection(SocketWaitDirection::None);
+}
+
+int Socket::GetEventMaskForIO() const
+{
+  int events = EVENT_CLOSE;
+
+  if (Peer.Disconnected == false)
+  {
+    SocketWaitDirection direction = GetWaitDirection();
+
+    if (direction != SocketWaitDirection::Write)
+      events |= EVENT_READ;
+
+    if (TxQueue.IsEmpty() == false || direction == SocketWaitDirection::Write)
+      events |= EVENT_WRITE;
+  }
+
+  return events;
 }
 
 int Socket::Detach(bool* enableClose)
