@@ -98,7 +98,7 @@ namespace
       if (Poll == -1 || socket == nullptr)
         return false;
 
-      int fd = socket->GetFD();
+      int fd = socket->Handle;
       if (fd == -1)
         return false;
 
@@ -125,7 +125,7 @@ namespace
       if (Poll == -1 || socket == nullptr)
         return false;
 
-      int fd = socket->GetFD();
+      int fd = socket->Handle;
       std::lock_guard<std::mutex> guard(Lock);
       auto it = Entries.find(fd);
       if (it == Entries.end())
@@ -148,7 +148,7 @@ namespace
       if (Poll == -1 || socket == nullptr)
         return false;
 
-      int fd = socket->GetFD();
+      int fd = socket->Handle;
       std::lock_guard<std::mutex> guard(Lock);
       auto it = Entries.find(fd);
       if (it == Entries.end())

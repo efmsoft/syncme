@@ -341,6 +341,62 @@ namespace
     return false;
   }
 
+
+  static bool WaitNoSocketEvent(SocketEventLoop& loop, int timeout)
+  {
+    SocketEventLoopResult result;
+    if (loop.Wait(result, timeout) == false)
+      return false;
+
+    return result.Skt == nullptr
+      && result.Events == 0
+      && result.Operation == SocketEventLoopOperation::None;
+  }
+
+  static bool WaitSocketRead(
+    SocketEventLoop& loop
+    , Socket* socket
+    , int timeout
+    , SocketEventLoopResult& result
+  )
+  {
+    result = SocketEventLoopResult();
+
+    for (int i = 0; i < 16; ++i)
+    {
+      SocketEventLoopResult current;
+      if (loop.Wait(current, timeout) == false)
+        return false;
+
+      if (current.Skt == nullptr)
+        continue;
+
+      if (current.Skt != socket)
+        continue;
+
+      if ((current.Events & EVENT_READ) == 0)
+        return false;
+
+      result = current;
+      return true;
+    }
+
+    return false;
+  }
+
+  static bool ReadExactFromSocket(
+    Socket* socket
+    , const char* expected
+  )
+  {
+    char buffer[1024]{};
+    int n = socket->Read(buffer, sizeof(buffer), 0);
+    if (n != int(strlen(expected)))
+      return false;
+
+    return memcmp(buffer, expected, strlen(expected)) == 0;
+  }
+
   static void AcceptAndSend(int listenHandle, HEvent doneEvent)
   {
     sockaddr_in peer{};
@@ -432,6 +488,54 @@ TEST(SocketEventLoop, ReadEventCanDriveSocketIO)
     server.join();
 
   pair.Close();
+}
+
+
+TEST(SocketEventLoop, ReadEventIsNotGeneratedWithoutData)
+{
+  Logme::ID ch = CH;
+  HEvent exitEvent = CreateNotificationEvent();
+  SocketPair pair(ch, exitEvent, std::make_shared<Config>());
+
+  int peer = -1;
+  ASSERT_TRUE(ConnectLoopbackSocket(pair, pair.Client, peer));
+
+  auto loop = SocketEventLoop::Create();
+  ASSERT_NE(loop, nullptr);
+
+  int context = 1;
+  ASSERT_TRUE(loop->Add(pair.Client.get(), &context, EVENT_READ | EVENT_CLOSE));
+
+  EXPECT_TRUE(WaitNoSocketEvent(*loop, 100));
+
+  constexpr const char FIRST_PACKET[] = "first readiness payload";
+  ASSERT_TRUE(SendAll(peer, FIRST_PACKET, strlen(FIRST_PACKET)));
+
+  SocketEventLoopResult result;
+  ASSERT_TRUE(WaitSocketRead(*loop, pair.Client.get(), 1000, result));
+  EXPECT_EQ(result.Context, &context);
+
+  IOStat stat{};
+  ASSERT_TRUE(pair.Client->ProcessIOEvents(result.Events, stat));
+  EXPECT_TRUE(ReadExactFromSocket(pair.Client.get(), FIRST_PACKET));
+
+  ASSERT_TRUE(loop->Update(pair.Client.get(), EVENT_READ | EVENT_CLOSE));
+  EXPECT_TRUE(WaitNoSocketEvent(*loop, 100));
+
+  constexpr const char SECOND_PACKET[] = "second readiness payload";
+  ASSERT_TRUE(SendAll(peer, SECOND_PACKET, strlen(SECOND_PACKET)));
+
+  ASSERT_TRUE(WaitSocketRead(*loop, pair.Client.get(), 1000, result));
+
+  stat = IOStat{};
+  ASSERT_TRUE(pair.Client->ProcessIOEvents(result.Events, stat));
+  EXPECT_TRUE(ReadExactFromSocket(pair.Client.get(), SECOND_PACKET));
+
+  EXPECT_TRUE(loop->Remove(pair.Client.get()));
+
+  SetEvent(exitEvent);
+  pair.Close();
+  CloseSocketHandle(peer);
 }
 
 TEST(SocketEventLoop, BidirectionalForwardingMatchesRawManagerUsage)

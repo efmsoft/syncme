@@ -51,6 +51,7 @@ namespace
     bool Removing;
     size_t PendingCount;
     char ReadByte;
+    DWORD ReadFlags;
     IocpOperation ReadOp;
     IocpOperation WriteOp;
 
@@ -64,6 +65,7 @@ namespace
       , Removing(false)
       , PendingCount(0)
       , ReadByte(0)
+      , ReadFlags(0)
       , ReadOp(this, OperationType::Read)
       , WriteOp(this, OperationType::Write)
     {
@@ -111,11 +113,18 @@ namespace
       if (Entries.count(socket))
         return false;
 
-      HANDLE handle = reinterpret_cast<HANDLE>(static_cast<intptr_t>(socket->GetFD()));
+      int fd = socket->Handle;
+      if (fd == -1)
+      {
+        LogE("Socket handle is -1");
+        return false;
+      }
+
+      HANDLE handle = reinterpret_cast<HANDLE>(static_cast<intptr_t>(fd));
       HANDLE rc = CreateIoCompletionPort(handle, Port, 0, 0);
       if (rc != Port)
       {
-        LogosE("CreateIoCompletionPort failed for socket");
+        LogE("CreateIoCompletionPort failed for socket %i and completion port %p. Error: %s", fd, Port, OSERR2);
         return false;
       }
 
@@ -238,6 +247,11 @@ namespace
           event = EVENT_CLOSE;
           operation = SocketEventLoopOperation::Close;
         }
+        else if (op->Type == OperationType::Read && bytes == 0)
+        {
+          event = EVENT_CLOSE;
+          operation = SocketEventLoopOperation::Close;
+        }
 
         if (removed)
         {
@@ -285,7 +299,7 @@ namespace
       state->Removing = true;
 
       CancelIoEx(
-        reinterpret_cast<HANDLE>(static_cast<intptr_t>(state->Skt->GetFD()))
+        reinterpret_cast<HANDLE>(static_cast<intptr_t>(state->Skt->Handle))
         , nullptr
       );
 
@@ -365,16 +379,17 @@ namespace
 
       WSABUF buffer{};
       buffer.buf = &state->ReadByte;
-      buffer.len = 0;
+      buffer.len = 1;
 
-      DWORD flags = 0;
+      state->ReadFlags = MSG_PEEK;
+
       DWORD bytes = 0;
       int rc = WSARecv(
-        SOCKET(state->Skt->GetFD())
+        SOCKET(state->Skt->Handle)
         , &buffer
         , 1
         , &bytes
-        , &flags
+        , &state->ReadFlags
         , &state->ReadOp.Overlapped
         , nullptr
       );
@@ -395,7 +410,7 @@ namespace
       return true;
     }
 
-    bool PostWrite(IocpState* state)
+    bool PostWrite(IocpState* state) const
     {
       if (state->WritePending || state->WriteNotified)
         return true;
