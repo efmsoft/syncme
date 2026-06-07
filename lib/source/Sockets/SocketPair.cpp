@@ -131,17 +131,17 @@ void SocketPair::Close()
   ClosePending = true;
   SetEvent(CloseEvent);
 
-  auto client = Client;
+  auto& client = Client;
   if (client)
   {
-    LogI("Closing client socket");
+    LogI("Closing client socket: %i", client->Handle);
     client->Close();
   }
 
-  auto server = Server;
+  auto& server = Server;
   if (server)
   {
-    LogI("Closing server socket");
+    LogI("Closing server socket: %i", server->Handle);
     server->Close();
   }
 }
