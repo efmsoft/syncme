@@ -105,7 +105,7 @@ bool SocketPair::IsDisconnected()
   return false;
 }
 
-void SocketPair::Close()
+void SocketPair::Close(SocketPairCloseMode mode)
 {
   std::lock_guard<std::mutex> lock(CloseLock);
 
@@ -114,18 +114,25 @@ void SocketPair::Close()
 
   LogI("Closing socket pair");
 
-  if (Client)
+  if (mode == SocketPairCloseMode::Graceful)
   {
-    LogI("Shutting down client");
-    Client->Flush();
-    Client->Shutdown();
-  }
+    if (Client)
+    {
+      LogI("Shutting down client");
+      Client->Flush();
+      Client->Shutdown();
+    }
 
-  if (Server)
+    if (Server)
+    {
+      LogI("Shutting down server");
+      Server->Flush();
+      Server->Shutdown();
+    }
+  }
+  else
   {
-    LogI("Shutting down server");
-    Server->Flush();
-    Server->Shutdown();
+    LogI("Fast socket pair close requested");
   }
 
   ClosePending = true;

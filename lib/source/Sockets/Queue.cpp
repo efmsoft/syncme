@@ -256,16 +256,22 @@ bool Queue::Append(const void* p, size_t cb, size_t* qsize, Queue* borrowFrom)
 
 bool Queue::IsEmpty() const
 {
+  std::lock_guard guard(Lock);
+
   return Total == 0;
 }
 
 size_t Queue::Size() const
 {
+  std::lock_guard guard(Lock);
+
   return Total;
 }
 
 size_t Queue::Count() const
 {
+  std::lock_guard guard(Lock);
+
   return Packets.size();
 }
 

@@ -28,7 +28,7 @@ namespace Syncme
         size_t Limit;
         TSignalTxReady Signal;
 
-        std::recursive_mutex Lock;
+        mutable std::recursive_mutex Lock;
         BufferList Packets;
         BufferList Free;
         size_t Total;

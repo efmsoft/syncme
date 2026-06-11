@@ -16,6 +16,12 @@ namespace Syncme
 {
   constexpr const int READ_REQUEST_TIMEOUT = 30000;
 
+  enum class SocketPairCloseMode
+  {
+    Graceful,
+    Fast
+  };
+
   struct SocketPair
   {
     CHANNEL& CH;
@@ -36,7 +42,7 @@ namespace Syncme
     SINCMELNK SocketPair(CHANNEL& ch, HEvent exitEvent, ConfigPtr config);
     SINCMELNK ~SocketPair();
 
-    SINCMELNK void Close();
+    SINCMELNK void Close(SocketPairCloseMode mode = SocketPairCloseMode::Graceful);
     SINCMELNK bool Closing() const;
     SINCMELNK int PeerDisconnected();
     SINCMELNK bool IsDisconnected();
