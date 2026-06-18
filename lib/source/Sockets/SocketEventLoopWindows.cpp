@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <cassert>
+#include <cstdint>
 #include <cstring>
 #include <memory>
 #include <unordered_map>
@@ -40,6 +41,9 @@ namespace
     }
   };
 
+  constexpr int WRITE_RETRY_MIN_MS = 1;
+  constexpr int WRITE_RETRY_MAX_MS = 50;
+
   struct IocpState
   {
     Socket* Skt;
@@ -50,6 +54,10 @@ namespace
     bool WriteNotified;
     bool Removing;
     size_t PendingCount;
+    size_t LastWriteSize;
+    size_t WriteEventSize;
+    uint64_t NextWriteRetry;
+    int WriteRetryDelay;
     char ReadByte;
     DWORD ReadFlags;
     IocpOperation ReadOp;
@@ -64,6 +72,10 @@ namespace
       , WriteNotified(false)
       , Removing(false)
       , PendingCount(0)
+      , LastWriteSize(0)
+      , WriteEventSize(0)
+      , NextWriteRetry(0)
+      , WriteRetryDelay(WRITE_RETRY_MIN_MS)
       , ReadByte(0)
       , ReadFlags(0)
       , ReadOp(this, OperationType::Read)
@@ -81,11 +93,13 @@ namespace
     std::atomic<bool> Stopping;
     std::unordered_map<Socket*, std::unique_ptr<IocpState>> Entries;
     std::vector<std::unique_ptr<IocpState>> Retired;
+    size_t WriteRetryCount;
 
   public:
     WindowsSocketEventLoop()
       : Port(nullptr)
       , Stopping(false)
+      , WriteRetryCount(0)
     {
       Port = CreateIoCompletionPort(INVALID_HANDLE_VALUE, nullptr, 0, 0);
       if (Port == nullptr)
@@ -142,10 +156,7 @@ namespace
         return false;
 
       IocpState* state = it->second.get();
-      if ((state->Events & EVENT_WRITE) && !(events & EVENT_WRITE))
-      {
-        state->WriteNotified = false;
-      }
+      UpdateWriteState(state, events);
 
       state->Events = events;
       return Arm(state);
@@ -168,16 +179,20 @@ namespace
 
       for (;;)
       {
+        if (PostDueWrites())
+          continue;
+
         DWORD bytes = 0;
         ULONG_PTR key = 0;
         OVERLAPPED* overlapped = nullptr;
+        int waitTimeout = GetEffectiveTimeout(timeout);
 
         BOOL ok = GetQueuedCompletionStatus(
           Port
           , &bytes
           , &key
           , &overlapped
-          , timeout < 0 ? INFINITE : DWORD(timeout)
+          , waitTimeout < 0 ? INFINITE : DWORD(waitTimeout)
         );
 
         if (overlapped == nullptr)
@@ -198,7 +213,12 @@ namespace
           result.Error = int(error);
 
           if (error == WAIT_TIMEOUT)
+          {
+            if (PostDueWrites())
+              continue;
+
             return true;
+          }
 
           LogosE("GetQueuedCompletionStatus failed");
           return false;
@@ -227,6 +247,7 @@ namespace
         {
           state->WritePending = false;
           state->WriteNotified = true;
+          state->WriteEventSize = state->Skt->TxQueue.Size();
           event = EVENT_WRITE;
           operation = SocketEventLoopOperation::Write;
         }
@@ -296,6 +317,7 @@ namespace
     void Retire(EntryIterator it)
     {
       IocpState* state = it->second.get();
+      ResetWriteRetry(state);
       state->Removing = true;
 
       CancelIoEx(
@@ -348,6 +370,136 @@ namespace
         else
           ++it;
       }
+    }
+
+    void ResetWriteRetry(IocpState* state)
+    {
+      if (state->NextWriteRetry != 0 && WriteRetryCount != 0)
+        --WriteRetryCount;
+
+      state->NextWriteRetry = 0;
+      state->WriteRetryDelay = WRITE_RETRY_MIN_MS;
+    }
+
+    void ScheduleWriteRetry(IocpState* state)
+    {
+      if (state->NextWriteRetry != 0)
+        return;
+
+      ++WriteRetryCount;
+      state->NextWriteRetry = GetTimeInMillisec() + state->WriteRetryDelay;
+
+      if (state->WriteRetryDelay < WRITE_RETRY_MAX_MS)
+      {
+        state->WriteRetryDelay *= 2;
+        if (state->WriteRetryDelay > WRITE_RETRY_MAX_MS)
+          state->WriteRetryDelay = WRITE_RETRY_MAX_MS;
+      }
+    }
+
+    void UpdateWriteState(IocpState* state, int events)
+    {
+      if ((events & EVENT_WRITE) == 0)
+      {
+        state->WriteNotified = false;
+        state->LastWriteSize = 0;
+        state->WriteEventSize = 0;
+        ResetWriteRetry(state);
+        return;
+      }
+
+      size_t size = state->Skt->TxQueue.Size();
+      if (size == 0)
+      {
+        state->WriteNotified = false;
+        state->LastWriteSize = 0;
+        state->WriteEventSize = 0;
+        ResetWriteRetry(state);
+        return;
+      }
+
+      bool progressed = state->WriteEventSize != 0 && size < state->WriteEventSize;
+      bool appended = size > state->LastWriteSize;
+
+      if (state->WriteNotified && !state->WritePending)
+      {
+        if (progressed || appended)
+        {
+          state->WriteNotified = false;
+          ResetWriteRetry(state);
+        }
+        else
+          ScheduleWriteRetry(state);
+      }
+
+      state->LastWriteSize = size;
+    }
+
+    bool IsWriteRetryDue(const IocpState* state, uint64_t now) const
+    {
+      return (state->Events & EVENT_WRITE)
+        && !state->Removing
+        && !state->WritePending
+        && state->WriteNotified
+        && state->NextWriteRetry != 0
+        && state->NextWriteRetry <= now;
+    }
+
+    bool PostDueWrites()
+    {
+      if (WriteRetryCount == 0)
+        return false;
+
+      uint64_t now = GetTimeInMillisec();
+      bool posted = false;
+
+      for (auto& item : Entries)
+      {
+        IocpState* state = item.second.get();
+        if (!IsWriteRetryDue(state, now))
+          continue;
+
+        state->WriteNotified = false;
+        state->NextWriteRetry = 0;
+        if (WriteRetryCount != 0)
+          --WriteRetryCount;
+
+        if (PostWrite(state))
+          posted = true;
+      }
+
+      return posted;
+    }
+
+    int GetEffectiveTimeout(int timeout) const
+    {
+      if (WriteRetryCount == 0)
+        return timeout;
+
+      int result = timeout;
+      uint64_t now = GetTimeInMillisec();
+
+      for (const auto& item : Entries)
+      {
+        const IocpState* state = item.second.get();
+        if ((state->Events & EVENT_WRITE) == 0
+          || state->Removing
+          || state->WritePending
+          || !state->WriteNotified
+          || state->NextWriteRetry == 0)
+        {
+          continue;
+        }
+
+        int wait = state->NextWriteRetry <= now
+          ? 0
+          : int(state->NextWriteRetry - now);
+
+        if (result < 0 || wait < result)
+          result = wait;
+      }
+
+      return result;
     }
 
     bool Arm(IocpState* state)
