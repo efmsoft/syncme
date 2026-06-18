@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cassert>
+#include <cstring>
 
 #include <openssl/bio.h>
 #include <openssl/err.h>
@@ -46,6 +47,7 @@ AsyncTlsStream::AsyncTlsStream(
   , Context(context)
   , Ssl(ssl)
   , OwnSsl(ownSsl)
+  , AdoptedPlainOffset(0)
   , Removing(false)
   , HandshakeCompleted(false)
   , LowerReadPending(false)
@@ -70,8 +72,12 @@ AsyncTlsStream::AsyncTlsStream(
       , SSL_MODE_ENABLE_PARTIAL_WRITE | SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER
     );
 
-    InitializeBio();
     HandshakeCompleted = SSL_is_init_finished(Ssl) != 0;
+
+    if (HandshakeCompleted)
+      AdoptPlaintextPending();
+
+    InitializeBio();
   }
 }
 
@@ -144,6 +150,8 @@ void AsyncTlsStream::Close()
 
   Removing = true;
   PendingResults.clear();
+  AdoptedPlainBuffers.clear();
+  AdoptedPlainOffset = 0;
   LowerWriter.Clear();
   PlainReadBuffer.reset();
   PlainReadPending = false;
@@ -274,6 +282,86 @@ bool AsyncTlsStream::InitializeBio()
   return true;
 }
 
+bool AsyncTlsStream::AdoptPlaintextPending()
+{
+  if (Ssl == nullptr)
+    return false;
+
+  for (;;)
+  {
+    if (SSL_has_pending(Ssl) == 0 && SSL_pending(Ssl) <= 0)
+      return true;
+
+    auto buffer = std::make_shared<IO::Buffer>();
+    if (buffer == nullptr)
+      return false;
+
+    buffer->resize(ENCRYPTED_READ_SIZE);
+
+    ERR_clear_error();
+    int rc = SSL_read(Ssl, buffer->data(), int(buffer->size()));
+    if (rc <= 0)
+    {
+      int error = GetSslError(rc);
+      if (IsWantIO(error))
+        return true;
+
+      if (error == SSL_ERROR_ZERO_RETURN)
+      {
+        TlsReadClosed = true;
+        return true;
+      }
+
+      return false;
+    }
+
+    buffer->resize(size_t(rc));
+    AdoptedPlainBuffers.push_back(buffer);
+  }
+}
+
+bool AsyncTlsStream::DeliverAdoptedPlaintext()
+{
+  if (!PlainReadPending || PlainReadBuffer == nullptr)
+    return true;
+
+  if (AdoptedPlainBuffers.empty())
+    return true;
+
+  IO::BufferPtr source = AdoptedPlainBuffers.front();
+  if (source == nullptr || AdoptedPlainOffset >= source->size())
+  {
+    AdoptedPlainBuffers.pop_front();
+    AdoptedPlainOffset = 0;
+    return DeliverAdoptedPlaintext();
+  }
+
+  size_t available = source->size() - AdoptedPlainOffset;
+  size_t capacity = PlainReadBuffer->size();
+  size_t size = std::min(available, capacity);
+
+  std::memcpy(
+    PlainReadBuffer->data()
+    , source->data() + AdoptedPlainOffset
+    , size
+  );
+
+  AdoptedPlainOffset += size;
+
+  if (AdoptedPlainOffset >= source->size())
+  {
+    AdoptedPlainBuffers.pop_front();
+    AdoptedPlainOffset = 0;
+  }
+
+  IO::BufferPtr buffer = PlainReadBuffer;
+  buffer->resize(size);
+  PlainReadBuffer.reset();
+  PlainReadPending = false;
+
+  return QueueResult(Operation::Read, buffer, size, 0);
+}
+
 bool AsyncTlsStream::Drive()
 {
   if (Ssl == nullptr || LowerStream == nullptr)
@@ -329,18 +417,19 @@ bool AsyncTlsStream::DriveHandshake()
 
   int error = GetSslError(rc);
   if (IsWantIO(error))
-  {
-    if (LowerReadClosed)
-      return QueueError(SSL_ERROR_SYSCALL);
-
     return true;
-  }
 
   return QueueError(ConvertSslError(error));
 }
 
 bool AsyncTlsStream::DrivePlainRead()
 {
+  if (!PlainReadPending || PlainReadBuffer == nullptr)
+    return true;
+
+  if (!DeliverAdoptedPlaintext())
+    return false;
+
   if (!PlainReadPending || PlainReadBuffer == nullptr)
     return true;
 
@@ -370,17 +459,7 @@ bool AsyncTlsStream::DrivePlainRead()
   }
 
   if (IsWantIO(error))
-  {
-    if (LowerReadClosed)
-    {
-      TlsReadClosed = true;
-      PlainReadBuffer.reset();
-      PlainReadPending = false;
-      return QueueReadClosed();
-    }
-
     return true;
-  }
 
   PlainReadBuffer.reset();
   PlainReadPending = false;
@@ -465,12 +544,7 @@ bool AsyncTlsStream::DriveShutdown()
 
   int error = GetSslError(rc);
   if (IsWantIO(error))
-  {
-    if (LowerReadClosed)
-      return QueueError(SSL_ERROR_SYSCALL);
-
     return true;
-  }
 
   return QueueError(ConvertSslError(error));
 }

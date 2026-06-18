@@ -30,6 +30,8 @@ namespace Syncme
 
         mutable std::recursive_mutex Lock;
         std::deque<Result> PendingResults;
+        std::deque<IO::BufferPtr> AdoptedPlainBuffers;
+        size_t AdoptedPlainOffset;
         AsyncWriteQueue LowerWriter;
 
         bool Removing;
@@ -78,6 +80,8 @@ namespace Syncme
 
       private:
         bool InitializeBio();
+        bool AdoptPlaintextPending();
+        bool DeliverAdoptedPlaintext();
         bool Drive();
         bool DriveHandshake();
         bool DrivePlainRead();
