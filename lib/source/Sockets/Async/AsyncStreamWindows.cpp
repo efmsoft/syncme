@@ -628,14 +628,42 @@ namespace
 
     void ShutdownAll()
     {
+      {
+        std::lock_guard<std::mutex> guard(Lock);
+
+        while (!Entries.empty())
+          RetireLocked(Entries.begin());
+
+        CleanupRetiredLocked();
+      }
+
+      DrainRetired();
+
+      std::lock_guard<std::mutex> guard(Lock);
+      CleanupRetiredLocked();
+      PendingResults.clear();
+    }
+
+    void DrainRetired()
+    {
+      while (HasPendingRetired())
+      {
+        Result result;
+        Wait(result, 100);
+      }
+    }
+
+    bool HasPendingRetired()
+    {
       std::lock_guard<std::mutex> guard(Lock);
 
-      while (!Entries.empty())
-        RetireLocked(Entries.begin());
+      for (const auto& stream : Retired)
+      {
+        if (stream->PendingCount != 0)
+          return true;
+      }
 
-      CleanupRetiredLocked();
-      Retired.clear();
-      PendingResults.clear();
+      return false;
     }
 
     void CleanupRetiredLocked()
