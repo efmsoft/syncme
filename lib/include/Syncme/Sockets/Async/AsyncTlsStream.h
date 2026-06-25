@@ -41,6 +41,7 @@ namespace Syncme
         bool TlsReadClosed;
         bool ShutdownPending;
         bool ShutdownCompleted;
+        bool LowerSendShutdownCompleted;
 
         IO::BufferPtr PlainReadBuffer;
         bool PlainReadPending;
@@ -70,6 +71,7 @@ namespace Syncme
 
         SINCMELNK bool StartHandshake();
         SINCMELNK bool IsHandshakeCompleted() const;
+        SINCMELNK bool IsShutdownCompleted() const;
 
         SINCMELNK bool ProcessLowerResult(const Result& result);
         SINCMELNK bool PopPendingResult(Result& result);
@@ -91,6 +93,7 @@ namespace Syncme
         bool StartLowerRead();
         bool FeedEncryptedInput(IO::BufferPtr buffer, size_t bytes);
         bool CompleteLowerWrite(size_t bytes);
+        bool CompleteLowerShutdown();
 
         bool QueueResult(
           Operation op

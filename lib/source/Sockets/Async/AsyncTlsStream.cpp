@@ -55,6 +55,7 @@ AsyncTlsStream::AsyncTlsStream(
   , TlsReadClosed(false)
   , ShutdownPending(false)
   , ShutdownCompleted(false)
+  , LowerSendShutdownCompleted(false)
   , PlainReadPending(false)
   , PlainWriteOffset(0)
   , PlainWriteSize(0)
@@ -137,8 +138,11 @@ bool AsyncTlsStream::ShutdownSend()
 {
   std::lock_guard<std::recursive_mutex> guard(Lock);
 
-  if (Removing || ShutdownCompleted)
+  if (Removing)
     return false;
+
+  if (ShutdownCompleted)
+    return true;
 
   ShutdownPending = true;
   return Drive();
@@ -152,6 +156,7 @@ void AsyncTlsStream::Close()
     return;
 
   Removing = true;
+  ShutdownPending = false;
   PendingResults.clear();
   AdoptedPlainBuffers.clear();
   AdoptedPlainOffset = 0;
@@ -159,9 +164,6 @@ void AsyncTlsStream::Close()
   PlainReadBuffer.reset();
   PlainReadPending = false;
   ResetPlainWrite();
-
-  if (LowerStream != nullptr)
-    LowerStream->Close();
 }
 
 bool AsyncTlsStream::StartHandshake()
@@ -179,6 +181,13 @@ bool AsyncTlsStream::IsHandshakeCompleted() const
   std::lock_guard<std::recursive_mutex> guard(Lock);
 
   return HandshakeCompleted;
+}
+
+bool AsyncTlsStream::IsShutdownCompleted() const
+{
+  std::lock_guard<std::recursive_mutex> guard(Lock);
+
+  return ShutdownCompleted && LowerSendShutdownCompleted;
 }
 
 bool AsyncTlsStream::ProcessLowerResult(const Result& result)
@@ -375,10 +384,13 @@ bool AsyncTlsStream::Drive()
     if (!DriveHandshake())
       return false;
 
-    if (!DrainEncryptedOutput())
-      return false;
+    if (!HandshakeCompleted)
+    {
+      if (!DrainEncryptedOutput())
+        return false;
 
-    return StartLowerRead();
+      return StartLowerRead();
+    }
   }
 
   if (PlainReadPending)
@@ -400,6 +412,9 @@ bool AsyncTlsStream::Drive()
   }
 
   if (!DrainEncryptedOutput())
+    return false;
+
+  if (!CompleteLowerShutdown())
     return false;
 
   return StartLowerRead();
@@ -539,7 +554,7 @@ bool AsyncTlsStream::DriveShutdown()
   {
     ShutdownCompleted = true;
     ShutdownPending = false;
-    return LowerWriter.IsIdle() ? LowerStream->ShutdownSend() : true;
+    return true;
   }
 
   if (rc == 0)
@@ -645,8 +660,21 @@ bool AsyncTlsStream::CompleteLowerWrite(size_t bytes)
   if (!LowerWriter.OnWriteCompleted(bytes))
     return false;
 
-  if (ShutdownCompleted && LowerWriter.IsIdle())
-    return LowerStream->ShutdownSend();
+  return CompleteLowerShutdown();
+}
+
+bool AsyncTlsStream::CompleteLowerShutdown()
+{
+  if (!ShutdownCompleted || !LowerWriter.IsIdle())
+    return true;
+
+  if (LowerSendShutdownCompleted)
+    return true;
+
+  if (LowerStream == nullptr || !LowerStream->ShutdownSend())
+    return false;
+
+  LowerSendShutdownCompleted = true;
 
   return true;
 }
