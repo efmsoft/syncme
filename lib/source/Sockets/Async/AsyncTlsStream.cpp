@@ -148,6 +148,9 @@ void AsyncTlsStream::Close()
 {
   std::lock_guard<std::recursive_mutex> guard(Lock);
 
+  if (Removing)
+    return;
+
   Removing = true;
   PendingResults.clear();
   AdoptedPlainBuffers.clear();
