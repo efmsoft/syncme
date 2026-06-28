@@ -491,7 +491,7 @@ namespace
             , 0
             , error
           );
-          return false;
+          return true;
         }
       }
 
@@ -543,7 +543,7 @@ namespace
             , 0
             , error
           );
-          return false;
+          return true;
         }
       }
 

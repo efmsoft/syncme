@@ -451,7 +451,7 @@ namespace
       stream->ReadPending = false;
       stream->ReadBuffer.reset();
       QueueResultLocked(owner, Operation::Error, nullptr, 0, errno);
-      return false;
+      return true;
     }
 
     bool TryWriteLocked(LinuxAsyncStream* stream)
@@ -495,7 +495,7 @@ namespace
         stream->WriteOffset = 0;
         stream->WriteSize = 0;
         QueueResultLocked(owner, Operation::Error, nullptr, 0, error);
-        return false;
+        return true;
       }
     }
 

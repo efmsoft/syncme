@@ -1,5 +1,8 @@
 #pragma once
 
+#include <cstdint>
+#include <vector>
+
 #include <Syncme/Api.h>
 #include <Syncme/Sockets/Socket.h>
 #include <Syncme/Sockets/OsslCompat.h>
@@ -11,6 +14,8 @@ namespace Syncme
   {
     std::mutex SslLock;
     SSL* Ssl;
+    bool AsyncTlsAutoHandshake;
+    std::vector<uint8_t> AsyncTlsPrefetch;
 
   public:
     SINCMELNK SSLSocket(SocketPair* pair, SSL* ssl);

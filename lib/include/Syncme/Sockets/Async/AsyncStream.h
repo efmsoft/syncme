@@ -26,6 +26,7 @@ namespace Syncme
         Read,
         Write,
         ReadClosed,
+        Handshake,
         Error,
         Wake,
         Stop

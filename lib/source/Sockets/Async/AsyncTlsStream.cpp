@@ -49,7 +49,9 @@ AsyncTlsStream::AsyncTlsStream(
   , OwnSsl(ownSsl)
   , AdoptedPlainOffset(0)
   , Removing(false)
+  , HandshakeStarted(false)
   , HandshakeCompleted(false)
+  , HandshakeResultQueued(false)
   , LowerReadPending(false)
   , LowerReadClosed(false)
   , TlsReadClosed(false)
@@ -74,6 +76,7 @@ AsyncTlsStream::AsyncTlsStream(
     );
 
     HandshakeCompleted = SSL_is_init_finished(Ssl) != 0;
+    HandshakeStarted = HandshakeCompleted;
 
     if (HandshakeCompleted)
       AdoptPlaintextPending();
@@ -172,6 +175,52 @@ bool AsyncTlsStream::StartHandshake()
 
   if (Removing || Ssl == nullptr)
     return false;
+
+  HandshakeStarted = true;
+  return Drive();
+}
+
+bool AsyncTlsStream::FeedEncryptedInput(const void* data, size_t bytes)
+{
+  std::lock_guard<std::recursive_mutex> guard(Lock);
+
+  if (Removing || Ssl == nullptr)
+    return false;
+
+  if (bytes == 0)
+    return true;
+
+  if (data == nullptr)
+    return false;
+
+  BIO* rbio = SSL_get_rbio(Ssl);
+  if (rbio == nullptr)
+    return false;
+
+  size_t offset = 0;
+  const char* ptr = static_cast<const char*>(data);
+
+  while (offset < bytes)
+  {
+    int rc = BIO_write(
+      rbio
+      , ptr + offset
+      , int(bytes - offset)
+    );
+
+    if (rc <= 0)
+    {
+      if (BIO_should_retry(rbio))
+        continue;
+
+      return false;
+    }
+
+    offset += size_t(rc);
+  }
+
+  if (!HandshakeStarted)
+    return true;
 
   return Drive();
 }
@@ -381,6 +430,9 @@ bool AsyncTlsStream::Drive()
 
   if (!HandshakeCompleted)
   {
+    if (!HandshakeStarted)
+      return true;
+
     if (!DriveHandshake())
       return false;
 
@@ -430,7 +482,7 @@ bool AsyncTlsStream::DriveHandshake()
   if (rc == 1)
   {
     HandshakeCompleted = true;
-    return true;
+    return QueueHandshakeCompleted();
   }
 
   int error = GetSslError(rc);
@@ -607,6 +659,9 @@ bool AsyncTlsStream::StartLowerRead()
   if (LowerReadPending || LowerReadClosed || Removing)
     return true;
 
+  if (!HandshakeStarted && !HandshakeCompleted)
+    return true;
+
   if (!PlainReadPending && HandshakeCompleted && !ShutdownPending)
     return true;
 
@@ -709,6 +764,15 @@ bool AsyncTlsStream::QueueError(int error)
 bool AsyncTlsStream::QueueReadClosed()
 {
   return QueueResult(Operation::ReadClosed, nullptr, 0, 0);
+}
+
+bool AsyncTlsStream::QueueHandshakeCompleted()
+{
+  if (HandshakeResultQueued)
+    return true;
+
+  HandshakeResultQueued = true;
+  return QueueResult(Operation::Handshake, nullptr, 0, 0);
 }
 
 bool AsyncTlsStream::IsWantIO(int error) const

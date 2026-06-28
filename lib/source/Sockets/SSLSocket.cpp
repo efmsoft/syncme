@@ -21,6 +21,7 @@ using namespace Syncme;
 SSLSocket::SSLSocket(SocketPair* pair, SSL* ssl)
   : Socket(pair)
   , Ssl(ssl)
+  , AsyncTlsAutoHandshake(true)
 {
   assert(Ssl);
 }

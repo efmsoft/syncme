@@ -35,7 +35,9 @@ namespace Syncme
         AsyncWriteQueue LowerWriter;
 
         bool Removing;
+        bool HandshakeStarted;
         bool HandshakeCompleted;
+        bool HandshakeResultQueued;
         bool LowerReadPending;
         bool LowerReadClosed;
         bool TlsReadClosed;
@@ -70,6 +72,7 @@ namespace Syncme
         SINCMELNK void Close() override;
 
         SINCMELNK bool StartHandshake();
+        SINCMELNK bool FeedEncryptedInput(const void* data, size_t bytes);
         SINCMELNK bool IsHandshakeCompleted() const;
         SINCMELNK bool IsShutdownCompleted() const;
 
@@ -104,6 +107,7 @@ namespace Syncme
 
         bool QueueError(int error);
         bool QueueReadClosed();
+        bool QueueHandshakeCompleted();
         bool IsWantIO(int error) const;
         int GetSslError(int rc) const;
         void ResetPlainWrite();
