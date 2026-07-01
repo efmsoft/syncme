@@ -71,6 +71,13 @@ namespace Syncme
           , AsyncStreamPtr& stream
         ) = 0;
 
+        // Keeps the native registration and pending I/O, but changes the
+        // Socket wrapper used by an already registered stream.
+        SINCMELNK virtual bool RebindSocket(
+          AsyncStream* stream
+          , Socket* socket
+        ) = 0;
+
         SINCMELNK virtual bool Remove(AsyncStream* stream) = 0;
         SINCMELNK virtual bool Wait(Result& result, int timeout) = 0;
         SINCMELNK virtual void Wake() = 0;

@@ -180,6 +180,17 @@ bool AsyncTlsStream::StartHandshake()
   return Drive();
 }
 
+bool AsyncTlsStream::AdoptPendingLowerRead()
+{
+  std::lock_guard<std::recursive_mutex> guard(Lock);
+
+  if (Removing || LowerReadClosed || LowerReadPending)
+    return false;
+
+  LowerReadPending = true;
+  return true;
+}
+
 bool AsyncTlsStream::FeedEncryptedInput(const void* data, size_t bytes)
 {
   std::lock_guard<std::recursive_mutex> guard(Lock);

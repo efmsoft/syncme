@@ -72,6 +72,7 @@ namespace Syncme
         SINCMELNK void Close() override;
 
         SINCMELNK bool StartHandshake();
+        SINCMELNK bool AdoptPendingLowerRead();
         SINCMELNK bool FeedEncryptedInput(const void* data, size_t bytes);
         SINCMELNK bool IsHandshakeCompleted() const;
         SINCMELNK bool IsShutdownCompleted() const;

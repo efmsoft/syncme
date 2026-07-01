@@ -206,6 +206,7 @@ namespace Syncme
 
     SINCMELNK virtual int Detach(bool* enableClose = nullptr);
     SINCMELNK virtual bool Attach(int socket, bool enableClose = true);
+    SINCMELNK void SetEnableClose(bool enableClose);
     SINCMELNK virtual void Close();
     SINCMELNK virtual bool Configure();
     SINCMELNK virtual bool StopPendingRead();

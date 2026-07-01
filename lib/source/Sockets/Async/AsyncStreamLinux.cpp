@@ -181,6 +181,35 @@ namespace
       return true;
     }
 
+    bool RebindSocket(
+      AsyncStream* stream
+      , Socket* socket
+    ) override
+    {
+      if (stream == nullptr || socket == nullptr || !socket->IsAttached())
+        return false;
+
+      auto* item = static_cast<LinuxAsyncStream*>(stream);
+      Socket* oldSocket = item->GetSocket();
+      if (oldSocket == nullptr || !oldSocket->IsAttached())
+        return false;
+
+      if (oldSocket == socket)
+        return true;
+
+      if (oldSocket->Handle != socket->Handle)
+        return false;
+
+      std::lock_guard<std::mutex> guard(Lock);
+
+      auto it = Entries.find(oldSocket->Handle);
+      if (it == Entries.end() || it->second.get() != item)
+        return false;
+
+      item->Skt = socket;
+      return true;
+    }
+
     bool Remove(AsyncStream* stream) override
     {
       if (stream == nullptr)

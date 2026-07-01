@@ -299,6 +299,12 @@ int Socket::Detach(bool* enableClose)
   return h;
 }
 
+void Socket::SetEnableClose(bool enableClose)
+{
+  auto guard = Lock.Lock();
+  EnableClose = enableClose;
+}
+
 bool Socket::IsAttached() const
 {
   return Handle != -1;

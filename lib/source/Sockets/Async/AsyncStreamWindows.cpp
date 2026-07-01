@@ -190,6 +190,41 @@ namespace
       return true;
     }
 
+    bool RebindSocket(
+      AsyncStream* stream
+      , Socket* socket
+    ) override
+    {
+      if (stream == nullptr || socket == nullptr || !socket->IsAttached())
+        return false;
+
+      auto* item = static_cast<WindowsAsyncStream*>(stream);
+      Socket* oldSocket = item->GetSocket();
+      if (oldSocket == nullptr || !oldSocket->IsAttached())
+        return false;
+
+      if (oldSocket == socket)
+        return true;
+
+      if (oldSocket->Handle != socket->Handle)
+        return false;
+
+      std::lock_guard<std::mutex> guard(Lock);
+
+      auto oldIt = Entries.find(oldSocket);
+      if (oldIt == Entries.end() || oldIt->second.get() != item)
+        return false;
+
+      if (Entries.find(socket) != Entries.end())
+        return false;
+
+      WindowsAsyncStreamPtr owner = oldIt->second;
+      Entries.erase(oldIt);
+      owner->Skt = socket;
+      Entries[socket] = std::move(owner);
+      return true;
+    }
+
     bool Remove(AsyncStream* stream) override
     {
       if (stream == nullptr)
