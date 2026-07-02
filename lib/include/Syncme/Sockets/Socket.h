@@ -142,7 +142,6 @@ namespace Syncme
     bool Configured;
     bool CloseNotify;
     bool BlockingMode;
-    bool AcceptWouldblock;
     SocketWaitDirection WaitDirection;
 
     std::string AcceptIP;
