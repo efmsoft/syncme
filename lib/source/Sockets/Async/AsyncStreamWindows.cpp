@@ -165,8 +165,34 @@ namespace
 
       std::lock_guard<std::mutex> guard(Lock);
 
-      if (Entries.find(socket) != Entries.end())
+      auto sameSocket = Entries.find(socket);
+      if (sameSocket != Entries.end())
+      {
+        LogE(
+          "async engine Add failed: socket wrapper is already registered: socket=%p handle=%i"
+          , socket
+          , socket->Handle
+        );
         return false;
+      }
+
+      for (const auto& entry : Entries)
+      {
+        Socket* registeredSocket = entry.first;
+        if (registeredSocket == nullptr || !registeredSocket->IsAttached())
+          continue;
+
+        if (registeredSocket->Handle != socket->Handle)
+          continue;
+
+        LogE(
+          "async engine Add warning: native handle is already tracked by another wrapper: new_socket=%p old_socket=%p handle=%i"
+          , socket
+          , registeredSocket
+          , socket->Handle
+        );
+        break;
+      }
 
       HANDLE handle = reinterpret_cast<HANDLE>(
         static_cast<intptr_t>(socket->Handle)
@@ -175,7 +201,15 @@ namespace
       HANDLE rc = CreateIoCompletionPort(handle, Port, 0, 0);
       if (rc != Port)
       {
-        LogosE("CreateIoCompletionPort failed for socket");
+        DWORD error = GetLastError();
+        LogE(
+          "CreateIoCompletionPort failed for socket: socket=%p handle=%i port=%p rc=%p error=%lu"
+          , socket
+          , socket->Handle
+          , Port
+          , rc
+          , error
+        );
         return false;
       }
 
@@ -196,32 +230,78 @@ namespace
     ) override
     {
       if (stream == nullptr || socket == nullptr || !socket->IsAttached())
+      {
+        LogE(
+          "async engine RebindSocket failed: invalid input stream=%p socket=%p handle=%i"
+          , stream
+          , socket
+          , socket != nullptr && socket->IsAttached() ? socket->Handle : -1
+        );
         return false;
+      }
 
       auto* item = static_cast<WindowsAsyncStream*>(stream);
       Socket* oldSocket = item->GetSocket();
       if (oldSocket == nullptr || !oldSocket->IsAttached())
+      {
+        LogE(
+          "async engine RebindSocket failed: old socket is not attached stream=%p old_socket=%p"
+          , stream
+          , oldSocket
+        );
         return false;
+      }
 
       if (oldSocket == socket)
         return true;
 
       if (oldSocket->Handle != socket->Handle)
+      {
+        LogE(
+          "async engine RebindSocket failed: handle mismatch old_socket=%p old_handle=%i new_socket=%p new_handle=%i"
+          , oldSocket
+          , oldSocket->Handle
+          , socket
+          , socket->Handle
+        );
         return false;
+      }
 
       std::lock_guard<std::mutex> guard(Lock);
 
       auto oldIt = Entries.find(oldSocket);
       if (oldIt == Entries.end() || oldIt->second.get() != item)
+      {
+        LogE(
+          "async engine RebindSocket failed: old stream is not registered old_socket=%p handle=%i stream=%p"
+          , oldSocket
+          , oldSocket->Handle
+          , stream
+        );
         return false;
+      }
 
       if (Entries.find(socket) != Entries.end())
+      {
+        LogE(
+          "async engine RebindSocket failed: new socket wrapper is already registered new_socket=%p handle=%i"
+          , socket
+          , socket->Handle
+        );
         return false;
+      }
 
       WindowsAsyncStreamPtr owner = oldIt->second;
       Entries.erase(oldIt);
       owner->Skt = socket;
       Entries[socket] = std::move(owner);
+
+      LogI(
+        "async engine RebindSocket completed: old_socket=%p new_socket=%p handle=%i"
+        , oldSocket
+        , socket
+        , socket->Handle
+      );
       return true;
     }
 
