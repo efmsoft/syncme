@@ -196,17 +196,31 @@ bool AsyncTlsStream::FeedEncryptedInput(const void* data, size_t bytes)
   std::lock_guard<std::recursive_mutex> guard(Lock);
 
   if (Removing || Ssl == nullptr)
+  {
+    LogE(
+      "async TLS encrypted input feed failed: removing=%i ssl=%p bytes=%zu"
+      , Removing ? 1 : 0
+      , Ssl
+      , bytes
+    );
     return false;
+  }
 
   if (bytes == 0)
     return true;
 
   if (data == nullptr)
+  {
+    LogE("async TLS encrypted input feed failed: data is null bytes=%zu", bytes);
     return false;
+  }
 
   BIO* rbio = SSL_get_rbio(Ssl);
   if (rbio == nullptr)
+  {
+    LogE("async TLS encrypted input feed failed: rbio is null ssl=%p bytes=%zu", Ssl, bytes);
     return false;
+  }
 
   size_t offset = 0;
   const char* ptr = static_cast<const char*>(data);
@@ -224,6 +238,14 @@ bool AsyncTlsStream::FeedEncryptedInput(const void* data, size_t bytes)
       if (BIO_should_retry(rbio))
         continue;
 
+      LogE(
+        "async TLS encrypted input feed failed: BIO_write failed ssl=%p rbio=%p bytes=%zu offset=%zu rc=%i"
+        , Ssl
+        , rbio
+        , bytes
+        , offset
+        , rc
+      );
       return false;
     }
 
@@ -233,7 +255,13 @@ bool AsyncTlsStream::FeedEncryptedInput(const void* data, size_t bytes)
   if (!HandshakeStarted)
     return true;
 
-  return Drive();
+  if (!Drive())
+  {
+    LogE("async TLS encrypted input feed failed: TLS drive failed after prefetch ssl=%p bytes=%zu", Ssl, bytes);
+    return false;
+  }
+
+  return true;
 }
 
 bool AsyncTlsStream::IsHandshakeCompleted() const
@@ -696,7 +724,10 @@ bool AsyncTlsStream::FeedEncryptedInput(IO::BufferPtr buffer, size_t bytes)
 
   BIO* rbio = SSL_get_rbio(Ssl);
   if (rbio == nullptr)
+  {
+    LogE("async TLS encrypted buffer feed failed: rbio is null ssl=%p bytes=%zu", Ssl, bytes);
     return false;
+  }
 
   size_t offset = 0;
   while (offset < bytes)
@@ -712,6 +743,14 @@ bool AsyncTlsStream::FeedEncryptedInput(IO::BufferPtr buffer, size_t bytes)
       if (BIO_should_retry(rbio))
         continue;
 
+      LogE(
+        "async TLS encrypted buffer feed failed: BIO_write failed ssl=%p rbio=%p bytes=%zu offset=%zu rc=%i"
+        , Ssl
+        , rbio
+        , bytes
+        , offset
+        , rc
+      );
       return false;
     }
 
