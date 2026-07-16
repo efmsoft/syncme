@@ -168,7 +168,10 @@ namespace
 
       std::lock_guard<std::mutex> guard(Lock);
       if (Entries.find(fd) != Entries.end())
+      {
+        LogE("async engine Add failed: fd is already registered: socket=%p fd=%i", socket, fd);
         return false;
+      }
 
       if (epoll_ctl(Poll, EPOLL_CTL_ADD, fd, &ev) == -1)
       {
@@ -216,21 +219,32 @@ namespace
         return false;
 
       auto* item = static_cast<LinuxAsyncStream*>(stream);
-      Socket* socket = item->GetSocket();
-      if (socket == nullptr)
-        return false;
-
-      int fd = socket->Handle;
-      if (fd == -1)
-        return false;
 
       std::lock_guard<std::mutex> guard(Lock);
-      auto it = Entries.find(fd);
+
+      Socket* socket = item->GetSocket();
+      int fd = socket != nullptr ? socket->Handle : -1;
+
+      auto it = Entries.end();
+      if (fd != -1)
+        it = Entries.find(fd);
+
+      if (it == Entries.end() || it->second.get() != item)
+      {
+        it = std::find_if(
+          Entries.begin()
+          , Entries.end()
+          , [item](const std::pair<const int, LinuxAsyncStreamPtr>& entry) {
+            return entry.second.get() == item;
+          }
+        );
+      }
+
       if (it == Entries.end())
         return false;
 
       it->second->Removing = true;
-      epoll_ctl(Poll, EPOLL_CTL_DEL, fd, nullptr);
+      epoll_ctl(Poll, EPOLL_CTL_DEL, it->first, nullptr);
       Entries.erase(it);
       return true;
     }

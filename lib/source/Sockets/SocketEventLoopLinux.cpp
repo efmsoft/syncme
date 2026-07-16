@@ -1,5 +1,6 @@
 #ifndef _WIN32
 
+#include <algorithm>
 #include <cassert>
 #include <atomic>
 #include <deque>
@@ -148,15 +149,30 @@ namespace
       if (Poll == -1 || socket == nullptr)
         return false;
 
-      int fd = socket->Handle;
       std::lock_guard<std::mutex> guard(Lock);
-      auto it = Entries.find(fd);
+
+      int fd = socket->Handle;
+
+      auto it = fd != -1 ? Entries.find(fd) : Entries.end();
+
+      if (it == Entries.end() || it->second.Skt != socket)
+      {
+        it = std::find_if(
+          Entries.begin()
+          , Entries.end()
+          , [socket](const std::pair<const int, Entry>& entry) {
+            return entry.second.Skt == socket;
+          }
+        );
+      }
+
       if (it == Entries.end())
         return false;
 
+      int entryFd = it->first;
       Entries.erase(it);
 
-      if (epoll_ctl(Poll, EPOLL_CTL_DEL, fd, nullptr) == -1)
+      if (epoll_ctl(Poll, EPOLL_CTL_DEL, entryFd, nullptr) == -1)
       {
         LogosE("epoll_ctl(EPOLL_CTL_DEL) failed");
         return false;
