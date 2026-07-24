@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstring>
+#include <string>
 
 #include <openssl/bio.h>
 #include <openssl/err.h>
@@ -81,7 +82,8 @@ AsyncTlsStream::AsyncTlsStream(
     if (HandshakeCompleted)
       AdoptPlaintextPending();
 
-    InitializeBio();
+    if (!InitializeBio())
+      LastError = "InitializeBio failed";
   }
 }
 
@@ -173,8 +175,17 @@ bool AsyncTlsStream::StartHandshake()
 {
   std::lock_guard<std::recursive_mutex> guard(Lock);
 
-  if (Removing || Ssl == nullptr)
+  if (Removing)
+  {
+    LastError = "failed to start handshake: stream is removing";
     return false;
+  }
+
+  if (Ssl == nullptr)
+  {
+    LastError = "failed to start handshake: SSL object is null";
+    return false;
+  }
 
   HandshakeStarted = true;
   return Drive();
@@ -184,8 +195,23 @@ bool AsyncTlsStream::AdoptPendingLowerRead()
 {
   std::lock_guard<std::recursive_mutex> guard(Lock);
 
-  if (Removing || LowerReadClosed || LowerReadPending)
+  if (Removing)
+  {
+    LastError = "pending lower read adoption failed: stream is removing";
     return false;
+  }
+
+  if (LowerReadClosed)
+  {
+    LastError = "pending lower read adoption failed: lower read is closed";
+    return false;
+  }
+
+  if (LowerReadPending)
+  {
+    LastError = "pending lower read adoption failed: lower read is already pending";
+    return false;
+  }
 
   LowerReadPending = true;
   return true;
@@ -197,6 +223,9 @@ bool AsyncTlsStream::FeedEncryptedInput(const void* data, size_t bytes)
 
   if (Removing || Ssl == nullptr)
   {
+    LastError = Removing
+      ? "encrypted input feed failed: stream is removing"
+      : "encrypted input feed failed: SSL object is null";
     LogE(
       "async TLS encrypted input feed failed: removing=%i ssl=%p bytes=%zu"
       , Removing ? 1 : 0
@@ -211,6 +240,7 @@ bool AsyncTlsStream::FeedEncryptedInput(const void* data, size_t bytes)
 
   if (data == nullptr)
   {
+    LastError = "encrypted input feed failed: data is null";
     LogE("async TLS encrypted input feed failed: data is null bytes=%zu", bytes);
     return false;
   }
@@ -218,6 +248,7 @@ bool AsyncTlsStream::FeedEncryptedInput(const void* data, size_t bytes)
   BIO* rbio = SSL_get_rbio(Ssl);
   if (rbio == nullptr)
   {
+    LastError = "encrypted input feed failed: rbio is null";
     LogE("async TLS encrypted input feed failed: rbio is null ssl=%p bytes=%zu", Ssl, bytes);
     return false;
   }
@@ -238,6 +269,8 @@ bool AsyncTlsStream::FeedEncryptedInput(const void* data, size_t bytes)
       if (BIO_should_retry(rbio))
         continue;
 
+      LastError = "encrypted input feed failed: BIO_write failed: rc="
+        + std::to_string(rc);
       LogE(
         "async TLS encrypted input feed failed: BIO_write failed ssl=%p rbio=%p bytes=%zu offset=%zu rc=%i"
         , Ssl
@@ -278,6 +311,31 @@ bool AsyncTlsStream::IsShutdownCompleted() const
   return ShutdownCompleted && LowerSendShutdownCompleted;
 }
 
+AsyncTlsStreamDiagnostics AsyncTlsStream::GetDiagnostics() const
+{
+  std::lock_guard<std::recursive_mutex> guard(Lock);
+
+  AsyncTlsStreamDiagnostics diagnostics{};
+  diagnostics.Removing = Removing;
+  diagnostics.HandshakeStarted = HandshakeStarted;
+  diagnostics.HandshakeCompleted = HandshakeCompleted;
+  diagnostics.HandshakeResultQueued = HandshakeResultQueued;
+  diagnostics.LowerReadPending = LowerReadPending;
+  diagnostics.LowerReadClosed = LowerReadClosed;
+  diagnostics.TlsReadClosed = TlsReadClosed;
+  diagnostics.ShutdownPending = ShutdownPending;
+  diagnostics.ShutdownCompleted = ShutdownCompleted;
+  diagnostics.LowerSendShutdownCompleted = LowerSendShutdownCompleted;
+  diagnostics.PlainReadPending = PlainReadPending;
+  diagnostics.PlainWritePending = PlainWritePending;
+  diagnostics.LowerWritePending = LowerWriter.IsWriting();
+  diagnostics.LowerWriteBytes = LowerWriter.Size();
+  diagnostics.LowerWriteCount = LowerWriter.Count();
+  diagnostics.PendingResultCount = PendingResults.size();
+  diagnostics.LastError = LastError;
+  return diagnostics;
+}
+
 bool AsyncTlsStream::ProcessLowerResult(const Result& result)
 {
   std::lock_guard<std::recursive_mutex> guard(Lock);
@@ -315,6 +373,7 @@ bool AsyncTlsStream::ProcessLowerResult(const Result& result)
   case Operation::Error:
     LowerReadPending = false;
     LowerReadClosed = true;
+    LastError = "lower stream error=" + std::to_string(result.Error);
     return QueueError(result.Error);
 
   default:
@@ -412,6 +471,7 @@ bool AsyncTlsStream::AdoptPlaintextPending()
         return true;
       }
 
+      SetSslError("SSL_read adopted plaintext", rc, error);
       return false;
     }
 
@@ -464,8 +524,17 @@ bool AsyncTlsStream::DeliverAdoptedPlaintext()
 
 bool AsyncTlsStream::Drive()
 {
-  if (Ssl == nullptr || LowerStream == nullptr)
+  if (Ssl == nullptr)
+  {
+    LastError = "TLS drive failed: SSL object is null";
     return false;
+  }
+
+  if (LowerStream == nullptr)
+  {
+    LastError = "TLS drive failed: lower stream is null";
+    return false;
+  }
 
   if (!HandshakeCompleted)
   {
@@ -521,6 +590,7 @@ bool AsyncTlsStream::DriveHandshake()
   if (rc == 1)
   {
     HandshakeCompleted = true;
+    LastError.clear();
     return QueueHandshakeCompleted();
   }
 
@@ -528,6 +598,7 @@ bool AsyncTlsStream::DriveHandshake()
   if (IsWantIO(error))
     return true;
 
+  SetSslError("SSL_do_handshake", rc, error);
   return QueueError(ConvertSslError(error));
 }
 
@@ -570,6 +641,7 @@ bool AsyncTlsStream::DrivePlainRead()
   if (IsWantIO(error))
     return true;
 
+  SetSslError("SSL_read", rc, error);
   PlainReadBuffer.reset();
   PlainReadPending = false;
   return QueueError(ConvertSslError(error));
@@ -622,6 +694,7 @@ bool AsyncTlsStream::DrivePlainWrite()
     if (IsWantIO(error))
       return DrainEncryptedOutput();
 
+    SetSslError("SSL_write", rc, error);
     ResetPlainWrite();
     return QueueError(ConvertSslError(error));
   }
@@ -655,6 +728,7 @@ bool AsyncTlsStream::DriveShutdown()
   if (IsWantIO(error))
     return true;
 
+  SetSslError("SSL_shutdown", rc, error);
   return QueueError(ConvertSslError(error));
 }
 
@@ -662,7 +736,10 @@ bool AsyncTlsStream::DrainEncryptedOutput()
 {
   BIO* wbio = SSL_get_wbio(Ssl);
   if (wbio == nullptr)
+  {
+    LastError = "failed to drain encrypted output: wbio is null";
     return false;
+  }
 
   for (;;)
   {
@@ -673,7 +750,10 @@ bool AsyncTlsStream::DrainEncryptedOutput()
     size_t size = std::min(pending, ENCRYPTED_CHUNK_SIZE);
     IO::BufferPtr buffer = std::make_shared<IO::Buffer>();
     if (buffer == nullptr)
+    {
+      LastError = "failed to drain encrypted output: buffer allocation failed";
       return false;
+    }
 
     buffer->resize(size);
 
@@ -683,13 +763,17 @@ bool AsyncTlsStream::DrainEncryptedOutput()
       if (BIO_should_retry(wbio))
         return true;
 
+      LastError = "failed to drain encrypted output: BIO_read failed";
       return false;
     }
 
     buffer->resize(size_t(rc));
 
     if (!LowerWriter.Push(buffer))
+    {
+      LastError = "failed to start encrypted lower write";
       return false;
+    }
   }
 }
 
@@ -706,12 +790,18 @@ bool AsyncTlsStream::StartLowerRead()
 
   IO::BufferPtr buffer = std::make_shared<IO::Buffer>();
   if (buffer == nullptr)
+  {
+    LastError = "failed to start encrypted lower read: buffer allocation failed";
     return false;
+  }
 
   buffer->resize(ENCRYPTED_READ_SIZE);
 
   if (!LowerStream->StartRead(buffer))
+  {
+    LastError = "failed to start encrypted lower read";
     return false;
+  }
 
   LowerReadPending = true;
   return true;
@@ -725,6 +815,7 @@ bool AsyncTlsStream::FeedEncryptedInput(IO::BufferPtr buffer, size_t bytes)
   BIO* rbio = SSL_get_rbio(Ssl);
   if (rbio == nullptr)
   {
+    LastError = "encrypted buffer feed failed: rbio is null";
     LogE("async TLS encrypted buffer feed failed: rbio is null ssl=%p bytes=%zu", Ssl, bytes);
     return false;
   }
@@ -743,6 +834,8 @@ bool AsyncTlsStream::FeedEncryptedInput(IO::BufferPtr buffer, size_t bytes)
       if (BIO_should_retry(rbio))
         continue;
 
+      LastError = "encrypted buffer feed failed: BIO_write failed: rc="
+        + std::to_string(rc);
       LogE(
         "async TLS encrypted buffer feed failed: BIO_write failed ssl=%p rbio=%p bytes=%zu offset=%zu rc=%i"
         , Ssl
@@ -763,7 +856,11 @@ bool AsyncTlsStream::FeedEncryptedInput(IO::BufferPtr buffer, size_t bytes)
 bool AsyncTlsStream::CompleteLowerWrite(size_t bytes)
 {
   if (!LowerWriter.OnWriteCompleted(bytes))
+  {
+    LastError = "encrypted lower write completion mismatch: bytes="
+      + std::to_string(bytes);
     return false;
+  }
 
   return CompleteLowerShutdown();
 }
@@ -776,8 +873,17 @@ bool AsyncTlsStream::CompleteLowerShutdown()
   if (LowerSendShutdownCompleted)
     return true;
 
-  if (LowerStream == nullptr || !LowerStream->ShutdownSend())
+  if (LowerStream == nullptr)
+  {
+    LastError = "failed to complete TLS shutdown: lower stream is null";
     return false;
+  }
+
+  if (!LowerStream->ShutdownSend())
+  {
+    LastError = "failed to complete TLS shutdown: lower send shutdown failed";
+    return false;
+  }
 
   LowerSendShutdownCompleted = true;
 
@@ -808,6 +914,9 @@ bool AsyncTlsStream::QueueError(int error)
   if (error == 0)
     error = SSL_ERROR_SSL;
 
+  if (LastError.empty())
+    LastError = "TLS protocol error=" + std::to_string(error);
+
   return QueueResult(Operation::Error, nullptr, 0, error);
 }
 
@@ -836,6 +945,29 @@ int AsyncTlsStream::GetSslError(int rc) const
     return SSL_ERROR_SSL;
 
   return SSL_get_error(Ssl, rc);
+}
+
+void AsyncTlsStream::SetSslError(
+  const char* operation
+  , int rc
+  , int sslError
+)
+{
+  LastError = operation ? operation : "TLS operation";
+  LastError += " failed: rc=" + std::to_string(rc);
+  LastError += ", ssl_error=" + std::to_string(sslError);
+
+  for (;;)
+  {
+    unsigned long queueError = ERR_get_error();
+    if (queueError == 0)
+      break;
+
+    char buffer[256]{};
+    ERR_error_string_n(queueError, buffer, sizeof(buffer));
+    LastError += ", openssl=";
+    LastError += buffer;
+  }
 }
 
 void AsyncTlsStream::ResetPlainWrite()

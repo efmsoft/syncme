@@ -4,6 +4,7 @@
 #include <deque>
 #include <memory>
 #include <mutex>
+#include <string>
 
 #include <Syncme/Api.h>
 #include <Syncme/Sockets/Async/AsyncStream.h>
@@ -19,6 +20,27 @@ namespace Syncme
       class AsyncTlsStream;
 
       using AsyncTlsStreamPtr = std::shared_ptr<AsyncTlsStream>;
+
+      struct AsyncTlsStreamDiagnostics
+      {
+        bool Removing;
+        bool HandshakeStarted;
+        bool HandshakeCompleted;
+        bool HandshakeResultQueued;
+        bool LowerReadPending;
+        bool LowerReadClosed;
+        bool TlsReadClosed;
+        bool ShutdownPending;
+        bool ShutdownCompleted;
+        bool LowerSendShutdownCompleted;
+        bool PlainReadPending;
+        bool PlainWritePending;
+        bool LowerWritePending;
+        size_t LowerWriteBytes;
+        size_t LowerWriteCount;
+        size_t PendingResultCount;
+        std::string LastError;
+      };
 
       class AsyncTlsStream : public AsyncStream
         , public std::enable_shared_from_this<AsyncTlsStream>
@@ -52,6 +74,7 @@ namespace Syncme
         size_t PlainWriteOffset;
         size_t PlainWriteSize;
         bool PlainWritePending;
+        std::string LastError;
 
       public:
         SINCMELNK AsyncTlsStream(
@@ -76,6 +99,7 @@ namespace Syncme
         SINCMELNK bool FeedEncryptedInput(const void* data, size_t bytes);
         SINCMELNK bool IsHandshakeCompleted() const;
         SINCMELNK bool IsShutdownCompleted() const;
+        SINCMELNK AsyncTlsStreamDiagnostics GetDiagnostics() const;
 
         SINCMELNK bool ProcessLowerResult(const Result& result);
         SINCMELNK bool PopPendingResult(Result& result);
@@ -111,6 +135,7 @@ namespace Syncme
         bool QueueHandshakeCompleted();
         bool IsWantIO(int error) const;
         int GetSslError(int rc) const;
+        void SetSslError(const char* operation, int rc, int sslError);
         void ResetPlainWrite();
       };
     }
