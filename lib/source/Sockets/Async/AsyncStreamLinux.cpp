@@ -602,6 +602,11 @@ namespace
       if (stream == nullptr || stream->Skt == nullptr || stream->Removing)
         return;
 
+      // EPOLLONESHOT must remain disarmed while no operation is pending.
+      // Otherwise a persistent HUP/RDHUP condition turns Wait() into a busy loop.
+      if (!stream->ReadPending && !stream->WritePending)
+        return;
+
       epoll_event ev = MakeEvent(stream);
       ev.data.fd = stream->Skt->Handle;
 
@@ -614,12 +619,12 @@ namespace
     static epoll_event MakeEvent(LinuxAsyncStream* stream)
     {
       epoll_event ev{};
-      ev.events = EPOLLRDHUP | EPOLLERR | EPOLLHUP;
+      ev.events = EPOLLONESHOT;
 
       if (stream != nullptr)
       {
         if (stream->ReadPending)
-          ev.events |= EPOLLIN;
+          ev.events |= EPOLLIN | EPOLLRDHUP;
 
         if (stream->WritePending)
           ev.events |= EPOLLOUT;

@@ -1,14 +1,18 @@
 #include <atomic>
+#include <chrono>
 #include <cstring>
+#include <future>
 #include <memory>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
 
 #include <Syncme/Logger/Log.h>
 #include <Syncme/Sockets/API.h>
+#include <Syncme/Sockets/Async/AsyncStream.h>
 #include <Syncme/Sockets/SocketEventLoop.h>
 #include <Syncme/Sockets/SocketPair.h>
 #include <Syncme/Sync.h>
@@ -589,3 +593,55 @@ TEST(SocketEventLoop, BidirectionalForwardingMatchesRawManagerUsage)
   CloseSocketHandle(clientPeer);
   CloseSocketHandle(serverPeer);
 }
+
+#ifndef _WIN32
+TEST(AsyncEngine, HalfCloseWithoutPendingReadDoesNotSpin)
+{
+  Logme::ID ch = CH;
+  HEvent exitEvent = CreateNotificationEvent();
+  SocketPair pair(ch, exitEvent, std::make_shared<Config>());
+
+  int peer = -1;
+  ASSERT_TRUE(ConnectLoopbackSocket(pair, pair.Client, peer));
+
+  auto engine = Sockets::Async::AsyncEngine::Create();
+  ASSERT_NE(engine, nullptr);
+
+  int context = 1;
+  Sockets::Async::AsyncStreamPtr stream;
+  ASSERT_TRUE(engine->Add(pair.Client.get(), &context, stream));
+  ASSERT_NE(stream, nullptr);
+
+  ASSERT_EQ(shutdown(peer, SD_SEND), 0);
+
+  auto waitResult = std::async(
+    std::launch::async
+    , [&engine]() {
+      Sockets::Async::Result result;
+      bool ok = engine->Wait(result, 100);
+      return std::make_pair(ok, result.Op);
+    }
+  );
+
+  const auto status = waitResult.wait_for(std::chrono::milliseconds(1000));
+  const bool spinDetected = status != std::future_status::ready;
+
+  if (spinDetected)
+    engine->Stop();
+
+  const auto result = waitResult.get();
+
+  EXPECT_FALSE(spinDetected);
+  if (!spinDetected)
+  {
+    EXPECT_TRUE(result.first);
+    EXPECT_EQ(result.second, Sockets::Async::Operation::None);
+  }
+
+  EXPECT_TRUE(engine->Remove(stream.get()));
+
+  SetEvent(exitEvent);
+  pair.Close();
+  CloseSocketHandle(peer);
+}
+#endif
