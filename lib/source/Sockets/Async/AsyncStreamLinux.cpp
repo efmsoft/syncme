@@ -10,6 +10,7 @@
 #include <mutex>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
+#include <sys/socket.h>
 #include <sys/uio.h>
 #include <unistd.h>
 #include <unordered_map>
@@ -426,7 +427,7 @@ namespace
       if (stream->ReadPending && (ev.events & (EPOLLIN | EPOLLRDHUP | EPOLLHUP)))
         TryReadLocked(stream.get());
 
-      if (stream->WritePending && (ev.events & EPOLLOUT))
+      if (stream->WritePending && (ev.events & (EPOLLOUT | EPOLLHUP)))
         TryWriteLocked(stream.get());
 
       if ((ev.events & EPOLLHUP) && !stream->ReadPending && !stream->WritePending)
@@ -516,7 +517,16 @@ namespace
           return true;
         }
 
-        ssize_t n = writev(stream->Skt->Handle, buffers, count);
+        msghdr message{};
+        message.msg_iov = buffers;
+        message.msg_iovlen = size_t(count);
+
+        ssize_t n = -1;
+        do
+        {
+          n = sendmsg(stream->Skt->Handle, &message, MSG_NOSIGNAL);
+        } while (n < 0 && errno == EINTR);
+
         if (n > 0)
         {
           stream->WriteOffset += size_t(n);

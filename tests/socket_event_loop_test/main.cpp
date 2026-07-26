@@ -644,4 +644,73 @@ TEST(AsyncEngine, HalfCloseWithoutPendingReadDoesNotSpin)
   pair.Close();
   CloseSocketHandle(peer);
 }
+
+TEST(AsyncEngine, PeerShutdownCompletesPendingWriteWithoutSpin)
+{
+  Logme::ID ch = CH;
+  HEvent exitEvent = CreateNotificationEvent();
+  SocketPair pair(ch, exitEvent, std::make_shared<Config>());
+
+  int peer = -1;
+  ASSERT_TRUE(ConnectLoopbackSocket(pair, pair.Client, peer));
+
+  int sendBufferSize = 4096;
+  ASSERT_EQ(
+    setsockopt(
+      pair.Client->Handle
+      , SOL_SOCKET
+      , SO_SNDBUF
+      , (const char*)&sendBufferSize
+      , sizeof(sendBufferSize)
+    )
+    , 0
+  );
+
+  auto engine = Sockets::Async::AsyncEngine::Create();
+  ASSERT_NE(engine, nullptr);
+
+  int context = 1;
+  Sockets::Async::AsyncStreamPtr stream;
+  ASSERT_TRUE(engine->Add(pair.Client.get(), &context, stream));
+  ASSERT_NE(stream, nullptr);
+
+  auto buffer = std::make_shared<Sockets::IO::Buffer>(1024 * 1024, 'x');
+  Sockets::Async::BufferChain buffers;
+  ASSERT_TRUE(buffers.Add(buffer));
+  ASSERT_TRUE(stream->StartWrite(buffers));
+
+  ASSERT_EQ(shutdown(peer, SHUT_RDWR), 0);
+
+  auto waitResult = std::async(
+    std::launch::async
+    , [&engine]() {
+      Sockets::Async::Result result;
+      bool ok = engine->Wait(result, 1000);
+      return std::make_pair(ok, result);
+    }
+  );
+
+  const auto status = waitResult.wait_for(std::chrono::milliseconds(2000));
+  const bool spinDetected = status != std::future_status::ready;
+
+  if (spinDetected)
+    engine->Stop();
+
+  const auto result = waitResult.get();
+
+  EXPECT_FALSE(spinDetected);
+  if (!spinDetected)
+  {
+    EXPECT_TRUE(result.first);
+    EXPECT_EQ(result.second.Op, Sockets::Async::Operation::Error);
+    EXPECT_NE(result.second.Error, 0);
+  }
+
+  EXPECT_TRUE(engine->Remove(stream.get()));
+
+  SetEvent(exitEvent);
+  pair.Close();
+  CloseSocketHandle(peer);
+}
+
 #endif
