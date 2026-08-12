@@ -138,6 +138,11 @@ namespace
       }
     }
 
+    bool IsValid() const override
+    {
+      return Port != nullptr;
+    }
+
     ~WindowsAsyncEngine() override
     {
       ShutdownAll();
@@ -157,7 +162,7 @@ namespace
     {
       stream.reset();
 
-      if (Port == nullptr || socket == nullptr || !socket->IsAttached())
+      if (!IsValid() || socket == nullptr || !socket->IsAttached())
         return false;
 
       if (socket->Handle == -1)
@@ -820,7 +825,11 @@ namespace
 
 std::unique_ptr<AsyncEngine> AsyncEngine::Create()
 {
-  return std::make_unique<WindowsAsyncEngine>();
+  auto engine = std::make_unique<WindowsAsyncEngine>();
+  if (!engine->IsValid())
+    return nullptr;
+
+  return engine;
 }
 
 #endif

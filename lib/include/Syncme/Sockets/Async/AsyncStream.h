@@ -65,6 +65,8 @@ namespace Syncme
 
         SINCMELNK static std::unique_ptr<AsyncEngine> Create();
 
+        SINCMELNK virtual bool IsValid() const = 0;
+
         SINCMELNK virtual bool Add(
           Socket* socket
           , void* context

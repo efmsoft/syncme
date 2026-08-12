@@ -90,6 +90,7 @@ namespace
     int Poll;
     int StopEvent;
     std::atomic<bool> Stopping;
+    std::atomic<bool> Failed;
 
     std::mutex Lock;
     std::unordered_map<int, LinuxAsyncStreamPtr> Entries;
@@ -101,11 +102,13 @@ namespace
       : Poll(-1)
       , StopEvent(-1)
       , Stopping(false)
+      , Failed(false)
       , Events(64)
     {
       Poll = epoll_create(1);
       if (Poll == -1)
       {
+        Failed.store(true);
         LogosE("epoll_create failed");
         return;
       }
@@ -113,6 +116,7 @@ namespace
       StopEvent = eventfd(0, EFD_NONBLOCK);
       if (StopEvent == -1)
       {
+        Failed.store(true);
         LogosE("eventfd failed");
         return;
       }
@@ -123,8 +127,14 @@ namespace
 
       if (epoll_ctl(Poll, EPOLL_CTL_ADD, StopEvent, &ev) == -1)
       {
+        Failed.store(true);
         LogosE("epoll_ctl(EPOLL_CTL_ADD) failed for StopEvent");
       }
+    }
+
+    bool IsValid() const override
+    {
+      return !Failed.load() && Poll != -1 && StopEvent != -1;
     }
 
     ~LinuxAsyncEngine() override
@@ -153,7 +163,7 @@ namespace
     {
       stream.reset();
 
-      if (Poll == -1 || socket == nullptr || !socket->IsAttached())
+      if (!IsValid() || socket == nullptr || !socket->IsAttached())
         return false;
 
       int fd = socket->Handle;
@@ -266,8 +276,15 @@ namespace
 
         if (n < 0)
         {
-          result.Error = errno;
-          LogosE("epoll_wait failed");
+          const int error = errno;
+          result.Error = error;
+          Failed.store(true);
+          LogE(
+            "epoll_wait failed: epfd=%i error=%i (%s)"
+            , Poll
+            , error
+            , std::strerror(error)
+          );
           return false;
         }
 
@@ -712,7 +729,11 @@ namespace
 
 std::unique_ptr<AsyncEngine> AsyncEngine::Create()
 {
-  return std::make_unique<LinuxAsyncEngine>();
+  auto engine = std::make_unique<LinuxAsyncEngine>();
+  if (!engine->IsValid())
+    return nullptr;
+
+  return engine;
 }
 
 #endif
