@@ -63,6 +63,7 @@ AsyncTlsStream::AsyncTlsStream(
   , PlainWriteOffset(0)
   , PlainWriteSize(0)
   , PlainWritePending(false)
+  , PlainWriteNeedsRead(false)
 {
   if (Context == nullptr && LowerStream != nullptr)
     Context = LowerStream->GetContext();
@@ -135,6 +136,7 @@ bool AsyncTlsStream::StartWrite(const BufferChain& buffers)
   PlainWriteOffset = 0;
   PlainWriteSize = buffers.Size();
   PlainWritePending = true;
+  PlainWriteNeedsRead = false;
 
   return Drive();
 }
@@ -328,6 +330,7 @@ AsyncTlsStreamDiagnostics AsyncTlsStream::GetDiagnostics() const
   diagnostics.LowerSendShutdownCompleted = LowerSendShutdownCompleted;
   diagnostics.PlainReadPending = PlainReadPending;
   diagnostics.PlainWritePending = PlainWritePending;
+  diagnostics.PlainWriteNeedsRead = PlainWriteNeedsRead;
   diagnostics.LowerWritePending = LowerWriter.IsWriting();
   diagnostics.LowerWriteBytes = LowerWriter.Size();
   diagnostics.LowerWriteCount = LowerWriter.Count();
@@ -362,10 +365,20 @@ bool AsyncTlsStream::ProcessLowerResult(const Result& result)
   case Operation::ReadClosed:
     LowerReadPending = false;
     LowerReadClosed = true;
+    TlsReadClosed = true;
+
+    if (PlainWriteNeedsRead)
+    {
+      LastError = "lower read closed while TLS write requires input";
+      PlainReadPending = false;
+      PlainReadBuffer.reset();
+      ResetPlainWrite();
+      return QueueError(SSL_ERROR_SYSCALL);
+    }
+
     if (!PlainReadPending)
       return true;
 
-    TlsReadClosed = true;
     PlainReadPending = false;
     PlainReadBuffer.reset();
     return QueueReadClosed();
@@ -679,6 +692,7 @@ bool AsyncTlsStream::DrivePlainWrite()
     int rc = SSL_write(Ssl, data, int(size));
     if (rc > 0)
     {
+      PlainWriteNeedsRead = false;
       PlainWriteOffset += size_t(rc);
       if (!DrainEncryptedOutput())
         return false;
@@ -691,6 +705,7 @@ bool AsyncTlsStream::DrivePlainWrite()
     }
 
     int error = GetSslError(rc);
+    PlainWriteNeedsRead = error == SSL_ERROR_WANT_READ;
     if (IsWantIO(error))
       return DrainEncryptedOutput();
 
@@ -785,8 +800,13 @@ bool AsyncTlsStream::StartLowerRead()
   if (!HandshakeStarted && !HandshakeCompleted)
     return true;
 
-  if (!PlainReadPending && HandshakeCompleted && !ShutdownPending)
+  if (!PlainReadPending
+    && !PlainWriteNeedsRead
+    && HandshakeCompleted
+    && !ShutdownPending)
+  {
     return true;
+  }
 
   IO::BufferPtr buffer = std::make_shared<IO::Buffer>();
   if (buffer == nullptr)
@@ -976,4 +996,5 @@ void AsyncTlsStream::ResetPlainWrite()
   PlainWriteOffset = 0;
   PlainWriteSize = 0;
   PlainWritePending = false;
+  PlainWriteNeedsRead = false;
 }

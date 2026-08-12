@@ -35,6 +35,7 @@ namespace Syncme
         bool LowerSendShutdownCompleted;
         bool PlainReadPending;
         bool PlainWritePending;
+        bool PlainWriteNeedsRead;
         bool LowerWritePending;
         size_t LowerWriteBytes;
         size_t LowerWriteCount;
@@ -74,6 +75,7 @@ namespace Syncme
         size_t PlainWriteOffset;
         size_t PlainWriteSize;
         bool PlainWritePending;
+        bool PlainWriteNeedsRead;
         std::string LastError;
 
       public:

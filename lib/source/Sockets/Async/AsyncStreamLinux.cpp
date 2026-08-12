@@ -160,7 +160,8 @@ namespace
       if (fd == -1)
         return false;
 
-      SetNonBlocking(fd);
+      if (!SetNonBlocking(fd))
+        return false;
 
       auto item = std::make_shared<LinuxAsyncStream>(this, socket, context);
 
@@ -309,8 +310,10 @@ namespace
       stream->ReadPending = true;
 
       bool ok = TryReadLocked(stream);
-      UpdateInterestLocked(stream);
-      return ok;
+      if (!ok)
+        return false;
+
+      return UpdateInterestLocked(stream);
     }
 
     bool StartWrite(
@@ -332,18 +335,32 @@ namespace
       stream->WritePending = true;
 
       bool ok = TryWriteLocked(stream);
-      UpdateInterestLocked(stream);
-      return ok;
+      if (!ok)
+        return false;
+
+      return UpdateInterestLocked(stream);
     }
 
   private:
-    static void SetNonBlocking(int fd)
+    static bool SetNonBlocking(int fd)
     {
       int flags = fcntl(fd, F_GETFL, 0);
       if (flags == -1)
-        return;
+      {
+        LogosE("fcntl(F_GETFL) failed");
+        return false;
+      }
 
-      fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+      if ((flags & O_NONBLOCK) != 0)
+        return true;
+
+      if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) == -1)
+      {
+        LogosE("fcntl(F_SETFL) failed");
+        return false;
+      }
+
+      return true;
     }
 
     void SignalStopEvent()
@@ -607,23 +624,47 @@ namespace
       return it->second;
     }
 
-    void UpdateInterestLocked(LinuxAsyncStream* stream)
+    bool UpdateInterestLocked(LinuxAsyncStream* stream)
     {
       if (stream == nullptr || stream->Skt == nullptr || stream->Removing)
-        return;
+        return true;
 
       // EPOLLONESHOT must remain disarmed while no operation is pending.
       // Otherwise a persistent HUP/RDHUP condition turns Wait() into a busy loop.
       if (!stream->ReadPending && !stream->WritePending)
-        return;
+        return true;
 
       epoll_event ev = MakeEvent(stream);
       ev.data.fd = stream->Skt->Handle;
 
-      if (epoll_ctl(Poll, EPOLL_CTL_MOD, stream->Skt->Handle, &ev) == -1)
-      {
-        LogosE("epoll_ctl(EPOLL_CTL_MOD) failed");
-      }
+      if (epoll_ctl(Poll, EPOLL_CTL_MOD, stream->Skt->Handle, &ev) != -1)
+        return true;
+
+      const int error = errno;
+      LinuxAsyncStreamPtr owner = FindStreamLocked(stream);
+
+      LogE(
+        "epoll_ctl(EPOLL_CTL_MOD) failed: fd=%i error=%i (%s) read_pending=%i write_pending=%i"
+        , stream->Skt->Handle
+        , error
+        , std::strerror(error)
+        , stream->ReadPending ? 1 : 0
+        , stream->WritePending ? 1 : 0
+      );
+
+      if (owner == nullptr)
+        return false;
+
+      stream->ReadPending = false;
+      stream->ReadBuffer.reset();
+      stream->WritePending = false;
+      stream->WriteBuffers.Clear();
+      stream->WriteOffset = 0;
+      stream->WriteSize = 0;
+
+      QueueResultLocked(owner, Operation::Error, nullptr, 0, error);
+      SignalStopEvent();
+      return true;
     }
 
     static epoll_event MakeEvent(LinuxAsyncStream* stream)
