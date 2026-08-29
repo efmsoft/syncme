@@ -8,6 +8,7 @@
 #endif
 
 #include <Syncme/Api.h>
+#include <Syncme/CritSection.h>
 #include <Syncme/Event/Event.h>
 #include <Syncme/Sync.h>
 

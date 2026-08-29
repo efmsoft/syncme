@@ -10,6 +10,7 @@
 #endif
 
 #include <Syncme/Api.h>
+#include <Syncme/CritSection.h>
 #include <Syncme/Sync.h>
 #include <Syncme/Sockets/SocketEvent.h>
 #include <Syncme/Sockets/WaitManager.h>

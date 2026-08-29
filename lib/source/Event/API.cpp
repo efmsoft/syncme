@@ -34,15 +34,17 @@ bool Syncme::CloseHandle(HEvent& event)
 
 HEvent Syncme::DuplicateHandle(HEvent event)
 {
-  HEvent e = std::shared_ptr<Syncme::Event>(
-    new Syncme::Event(event->Notification, event->Signalled)
+  if (event == nullptr)
+    return HEvent();
+
+  Event* duplicate = event->Duplicate();
+  if (duplicate == nullptr)
+    return HEvent();
+
+  return std::shared_ptr<Syncme::Event>(
+    duplicate
     , Syncme::EventDeleter()
   );
-
-  if (e != nullptr)
-    e->BindTo(event.get());
-  
-  return e;
 }
 
 STATE Syncme::GetEventState(HEvent event)

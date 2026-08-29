@@ -1,3 +1,7 @@
+#include <atomic>
+#include <chrono>
+#include <functional>
+#include <memory>
 #include <stdio.h>
 #include <thread>
 #include <vector>
@@ -11,6 +15,31 @@ using namespace Syncme;
 using namespace std::chrono_literals;
 
 const int THREADS = 100;
+const uint32_t DEADLOCK_TIMEOUT_MS = 5000;
+
+static bool RunWithTimeout(std::function<void()> code, uint32_t timeoutMs)
+{
+  auto completed = std::make_shared<std::atomic<bool>>(false);
+
+  std::thread(
+    [code = std::move(code), completed]() mutable
+    {
+      code();
+      completed->store(true, std::memory_order_release);
+    }
+  ).detach();
+
+  auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
+  while (std::chrono::steady_clock::now() < deadline)
+  {
+    if (completed->load(std::memory_order_acquire))
+      return true;
+
+    std::this_thread::sleep_for(1ms);
+  }
+
+  return completed->load(std::memory_order_acquire);
+}
 
 void setevent(HEvent event)
 {
@@ -172,6 +201,168 @@ TEST(Sync, duplicate_event)
   CloseHandle(ev2);
 }
 
+TEST(Sync, duplicate_chain_no_deadlock)
+{
+  HEvent ev1 = CreateNotificationEvent();
+  HEvent ev2 = DuplicateHandle(ev1);
+  HEvent ev3 = DuplicateHandle(ev2);
+
+  ASSERT_TRUE(ev1);
+  ASSERT_TRUE(ev2);
+  ASSERT_TRUE(ev3);
+
+  ASSERT_TRUE(
+    RunWithTimeout(
+      [ev1]()
+      {
+        SetEvent(ev1);
+      }
+      , DEADLOCK_TIMEOUT_MS
+    )
+  );
+
+  EXPECT_EQ(WaitForSingleObject(ev3, 0), WAIT_RESULT::OBJECT_0);
+
+  ASSERT_TRUE(
+    RunWithTimeout(
+      [ev3]()
+      {
+        ResetEvent(ev3);
+      }
+      , DEADLOCK_TIMEOUT_MS
+    )
+  );
+
+  EXPECT_EQ(WaitForSingleObject(ev1, 0), WAIT_RESULT::TIMEOUT);
+}
+
+TEST(Sync, duplicate_star_no_deadlock)
+{
+  HEvent ev1 = CreateNotificationEvent();
+  HEvent ev2 = DuplicateHandle(ev1);
+  HEvent ev3 = DuplicateHandle(ev1);
+
+  ASSERT_TRUE(ev1);
+  ASSERT_TRUE(ev2);
+  ASSERT_TRUE(ev3);
+
+  ASSERT_TRUE(
+    RunWithTimeout(
+      [ev2]()
+      {
+        SetEvent(ev2);
+      }
+      , DEADLOCK_TIMEOUT_MS
+    )
+  );
+
+  EXPECT_EQ(WaitForSingleObject(ev3, 0), WAIT_RESULT::OBJECT_0);
+}
+
+TEST(Sync, duplicate_concurrent_set_reset_no_deadlock)
+{
+  HEvent ev1 = CreateNotificationEvent();
+  HEvent ev2 = DuplicateHandle(ev1);
+
+  ASSERT_TRUE(ev1);
+  ASSERT_TRUE(ev2);
+
+  ASSERT_TRUE(
+    RunWithTimeout(
+      [ev1, ev2]()
+      {
+        std::atomic<int> ready{};
+        std::atomic<bool> start{};
+
+        auto code = [&ready, &start](HEvent event)
+        {
+          ready++;
+          while (start.load(std::memory_order_acquire) == false)
+            std::this_thread::yield();
+
+          for (int i = 0; i < 10000; ++i)
+          {
+            SetEvent(event);
+            ResetEvent(event);
+          }
+        };
+
+        std::thread t1(code, ev1);
+        std::thread t2(code, ev2);
+
+        while (ready.load() != 2)
+          std::this_thread::yield();
+
+        start.store(true, std::memory_order_release);
+
+        t1.join();
+        t2.join();
+      }
+      , DEADLOCK_TIMEOUT_MS
+    )
+  );
+}
+
+TEST(Sync, duplicate_close_is_independent)
+{
+  HEvent ev1 = CreateNotificationEvent();
+  HEvent ev2 = DuplicateHandle(ev1);
+
+  ASSERT_TRUE(ev1);
+  ASSERT_TRUE(ev2);
+
+  SetEvent(ev1);
+  EXPECT_TRUE(CloseHandle(ev1));
+
+  EXPECT_FALSE(GetEventClosed(ev2));
+  EXPECT_EQ(WaitForSingleObject(ev2, 0), WAIT_RESULT::OBJECT_0);
+
+  ResetEvent(ev2);
+  EXPECT_EQ(WaitForSingleObject(ev2, 0), WAIT_RESULT::TIMEOUT);
+}
+
+TEST(Sync, duplicate_lifetime_stress_no_deadlock)
+{
+  HEvent event = CreateNotificationEvent();
+  ASSERT_TRUE(event);
+
+  ASSERT_TRUE(
+    RunWithTimeout(
+      [event]()
+      {
+        const int WORKERS = 8;
+        const int ITERATIONS = 2000;
+
+        std::vector<std::thread> threads;
+        threads.reserve(WORKERS);
+
+        for (int i = 0; i < WORKERS; ++i)
+        {
+          threads.emplace_back(
+            [event]()
+            {
+              for (int n = 0; n < ITERATIONS; ++n)
+              {
+                HEvent duplicate = DuplicateHandle(event);
+                if (duplicate == nullptr)
+                  continue;
+
+                SetEvent(duplicate);
+                ResetEvent(event);
+                CloseHandle(duplicate);
+              }
+            }
+          );
+        }
+
+        for (auto& thread : threads)
+          thread.join();
+      }
+      , DEADLOCK_TIMEOUT_MS
+    )
+  );
+}
+
 TEST(Sync, duplicate_sync_event)
 {
   HEvent ev1 = CreateSynchronizationEvent();
@@ -248,4 +439,96 @@ TEST(Sync, mupltiple_signalled)
   r = WaitForMultipleObjects(arr, false, 1000);
   f = r == WAIT_RESULT::OBJECT_1;
   EXPECT_EQ(f, true);
+}
+
+TEST(Sync, same_notification_handle_wait_all)
+{
+  HEvent event = CreateNotificationEvent();
+  ASSERT_TRUE(event);
+
+  std::thread thread(
+    [event]()
+    {
+      std::this_thread::sleep_for(20ms);
+      SetEvent(event);
+    }
+  );
+
+  EventArray events(event, event);
+  WAIT_RESULT rc = WaitForMultipleObjects(events, true, 1000);
+
+  thread.join();
+
+  EXPECT_TRUE(rc == WAIT_RESULT::OBJECT_0 || rc == WAIT_RESULT::OBJECT_1);
+  CloseHandle(event);
+}
+
+TEST(Sync, same_sync_handle_wait_all_consumes_one_signal)
+{
+  HEvent event = CreateSynchronizationEvent();
+  ASSERT_TRUE(event);
+
+  std::thread thread(
+    [event]()
+    {
+      std::this_thread::sleep_for(20ms);
+      SetEvent(event);
+    }
+  );
+
+  EventArray events(event, event);
+  WAIT_RESULT rc = WaitForMultipleObjects(events, true, 100);
+
+  thread.join();
+
+  EXPECT_EQ(rc, WAIT_RESULT::TIMEOUT);
+  CloseHandle(event);
+}
+
+TEST(Sync, wait_multiple_close_race)
+{
+  const int ITERATIONS = 500;
+
+  for (int i = 0; i < ITERATIONS; ++i)
+  {
+    HEvent source = CreateNotificationEvent();
+    HEvent duplicate = DuplicateHandle(source);
+    HEvent second = CreateNotificationEvent();
+    HEvent closeHandle = duplicate;
+
+    EventArray events(duplicate, second);
+
+    std::atomic<bool> start{};
+    WAIT_RESULT result = WAIT_RESULT::TIMEOUT;
+
+    std::thread waiter(
+      [&]()
+      {
+        while (start.load(std::memory_order_acquire) == false)
+          std::this_thread::yield();
+
+        result = WaitForMultipleObjects(events, true, 1000);
+      }
+    );
+
+    std::thread actor(
+      [&]()
+      {
+        start.store(true, std::memory_order_release);
+
+        SetEvent(source);
+        SetEvent(second);
+        CloseHandle(closeHandle);
+      }
+    );
+
+    waiter.join();
+    actor.join();
+
+    EXPECT_TRUE(
+      result == WAIT_RESULT::FAILED
+      || result == WAIT_RESULT::OBJECT_0
+      || result == WAIT_RESULT::OBJECT_1
+    );
+  }
 }

@@ -12,7 +12,10 @@ target_compile_definitions(thread_pool_test PUBLIC
 )
 
 include(GoogleTest)
-gtest_discover_tests(thread_pool_test)
+gtest_discover_tests(
+  thread_pool_test
+  PROPERTIES TIMEOUT 30
+)
 
 set_target_properties(thread_pool_test PROPERTIES FOLDER "Tests")  
 install(TARGETS thread_pool_test CONFIGURATIONS ${CMAKE_BUILD_TYPE} RUNTIME DESTINATION ${NF_INSTALL_DIR_BIN})

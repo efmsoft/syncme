@@ -1,40 +1,23 @@
 #pragma once
 
-#include <atomic>
-#include <condition_variable>
 #include <functional>
-#include <list>
-#include <map>
 #include <memory>
-#include <mutex>
 #include <stdint.h>
-#include <vector>
 
 #include <Syncme/Api.h>
-#include <Syncme/CritSection.h>
 #include <Syncme/Sync.h>
 
 namespace Syncme
 {
   enum class WAIT_RESULT;
+  struct EventState;
 
   typedef std::function<void(uint32_t cookie, bool failed)> TWaitComplete;
 
   class Event
   {
-    std::mutex Lock;
-    bool Signalled;
-    std::condition_variable Condition;
-
-    CS DataLock;
-    bool Notification;
+    std::shared_ptr<EventState> State;
     bool Closing;
-
-    static std::atomic<uint32_t> NextCookie;
-    std::map<uint32_t, TWaitComplete> Waits;
-
-    static CS RemoveLock;
-    std::list<Event*> CrossRef;
 
   public:
     SINCMELNK Event(bool notification_event = true, bool signalled = false);
@@ -67,12 +50,10 @@ namespace Syncme
     friend STATE Syncme::GetEventState(HEvent event);
     friend bool Syncme::GetEventClosed(HEvent event);
 
-    void AddRef(Event* dup);
-    void RemoveRef(Event* dup);
-    Event* PopRef();
-    void BindTo(Event* aliase);
-
   private:
+    Event(std::shared_ptr<EventState> state);
+    Event* Duplicate() const;
+
     Event(const Event&) = delete;
     Event(Event&& src) noexcept = delete;
     Event& operator=(const Event&) = delete;

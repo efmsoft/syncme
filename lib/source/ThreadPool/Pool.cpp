@@ -479,6 +479,7 @@ TaskPtr Pool::CB_OnFree(Worker* p)
 
   WorkerPtr t = p->Get();
   Unused.push_front(t);
+  ThreadsUnused = Unused.size();
   SetEvent(FreeEvent);
 
   return TaskPtr();

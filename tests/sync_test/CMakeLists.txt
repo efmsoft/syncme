@@ -8,7 +8,10 @@ target_compile_definitions(sync_test PUBLIC
 )
 
 include(GoogleTest)
-gtest_discover_tests(sync_test)
+gtest_discover_tests(
+  sync_test
+  PROPERTIES TIMEOUT 30
+)
 
 set_target_properties(sync_test PROPERTIES FOLDER "Tests")  
 install(TARGETS sync_test CONFIGURATIONS ${CMAKE_BUILD_TYPE} RUNTIME DESTINATION ${NF_INSTALL_DIR_BIN})

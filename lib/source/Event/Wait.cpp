@@ -1,6 +1,7 @@
+#include <algorithm>
 #include <cassert>
-#include <map>
 #include <mutex>
+#include <utility>
 #include <vector>
 
 #include <Syncme/Sync.h>
@@ -10,12 +11,13 @@ using namespace Syncme;
 
 namespace Syncme
 {
-  typedef std::map<Event*, uint32_t> CookieMap;
+  typedef std::pair<Event*, uint32_t> WaitCookie;
+  typedef std::vector<WaitCookie> CookieList;
 
   class WaitContext
   {
     std::mutex Lock;
-    CookieMap Cookies;
+    CookieList Cookies;
 
     bool WaitAll;
     HEvent Event;
@@ -33,9 +35,10 @@ namespace Syncme
     {
     }
 
-    CookieMap& GetCookieMap()
+    void AddCookie(Syncme::Event* event, uint32_t cookie)
     {
-      return Cookies;
+      std::lock_guard<std::mutex> guard(Lock);
+      Cookies.emplace_back(event, cookie);
     }
 
     bool Completed(size_t count)
@@ -57,7 +60,10 @@ namespace Syncme
         auto it = std::find_if(
           Cookies.begin()
           , Cookies.end()
-          , [cookie](const auto& it) { return it.second == cookie; }
+          , [cookie](const auto& wait)
+            {
+              return wait.second == cookie;
+            }
         );
 
         if (it != Cookies.end())
@@ -87,7 +93,7 @@ namespace Syncme
       if (GetEventState(Event) != STATE::SIGNALLED)
         rc = WaitForSingleObject(Event, ms);
 
-      CookieMap cookies;
+      CookieList cookies;
       if (true)
       {
         std::lock_guard<std::mutex> guard(Lock);
@@ -99,7 +105,7 @@ namespace Syncme
       for (auto& c : cookies)
       {
         auto f = c.first->UnregisterWait(c.second);
-        assert(f || c.first->Closing);
+        assert(f || c.first->GetClosing());
       }
 
       if (Failed)
@@ -122,13 +128,12 @@ WAIT_RESULT Syncme::WaitForMultipleObjects(
   using namespace std::placeholders;
   
   WaitContext context(waitAll, events.size());
-  auto& cookies = context.GetCookieMap();
 
   size_t index = 0;
   for (auto& e : events)
   {
     auto cookie = e->RegisterWait(std::bind_front(&WaitContext::EventSignalled, &context, index++));
-    cookies[e.get()] = cookie;
+    context.AddCookie(e.get(), cookie);
 
     if (context.Completed(events.size()))
       break;
@@ -146,7 +151,7 @@ WAIT_RESULT Syncme::WaitForSingleObject(HEvent event, uint32_t ms)
     return WAIT_RESULT::FAILED;
 
   bool f = event->Wait(ms);
-  if (event->Closing)
+  if (event->GetClosing())
     return WAIT_RESULT::FAILED;
 
   return f ? WAIT_RESULT::OBJECT_0 : WAIT_RESULT::TIMEOUT;

@@ -1,6 +1,9 @@
-#include <algorithm>
 #include <cassert>
 #include <chrono>
+#include <condition_variable>
+#include <map>
+#include <mutex>
+#include <utility>
 
 #include <Syncme/Event/Counter.h>
 #include <Syncme/Event/Event.h>
@@ -9,75 +12,78 @@ using namespace Syncme;
 
 #define SIGNATURE *(uint32_t*)"Evnt";
 
+namespace Syncme
+{
+  struct EventWait
+  {
+    Event* Owner;
+    TWaitComplete Complete;
+  };
+
+  struct EventState
+  {
+    EventState(bool notification, bool signalled)
+      : Notification(notification)
+      , Signalled(signalled)
+    {
+    }
+
+    std::mutex Lock;
+    std::condition_variable Condition;
+
+    bool Notification;
+    bool Signalled;
+
+    std::map<uint32_t, EventWait> Waits;
+  };
+}
+
 std::atomic<uint64_t> Syncme::EventObjects{};
 uint64_t Syncme::GetEventObjects() {return Syncme::EventObjects;}
 
-std::atomic<uint32_t> Event::NextCookie{ 1 };
-CS Event::RemoveLock;
+static std::atomic<uint32_t> NextCookie{1};
 
 Event::Event(bool notification_event, bool signalled)
-  : Notification(notification_event)
+  : State(std::make_shared<EventState>(notification_event, signalled))
   , Closing(false)
-  , Signalled(signalled)
 {
+  EventObjects++;
+}
+
+Event::Event(std::shared_ptr<EventState> state)
+  : State(std::move(state))
+  , Closing(false)
+{
+  assert(State);
   EventObjects++;
 }
 
 Event::~Event()
 {
-  if (true)
+  if (State)
   {
-    std::lock_guard<std::mutex> guard(Lock);
-    assert(Waits.empty());
+    std::lock_guard<std::mutex> guard(State->Lock);
 
-    for (;;)
-    {
-      Event* c = PopRef();
-      if (c == nullptr)
-        break;
-
-      c->RemoveRef(this);
-    }
+    for (auto& wait : State->Waits)
+      assert(wait.second.Owner != this);
   }
-   
+
   EventObjects--;
 }
 
 void EventDeleter::operator()(Event* p) const
 {
-  bool norefs = false;
-
-  if (true)
-  {
-    std::lock_guard<std::mutex> guard(p->Lock);
-
-    if (p->Closing == false)
-    {
-      // After setting this flag, we can release the lock and 
-      // be confident that cross-references will no longer appear
-      p->Closing = true;
-    }
-
-    if (p->CrossRef.empty())
-      norefs = true;
-  }
-
-  if (norefs)
-  {
-    delete p;
-    return;
-  }
-
-  auto guard = Event::RemoveLock.Lock();
   delete p;
 }
 
-void Event::BindTo(Event* aliase)
+Event* Event::Duplicate() const
 {
-  auto guard = RemoveLock.Lock();
+  std::lock_guard<std::mutex> guard(State->Lock);
 
-  AddRef(aliase);
-  aliase->AddRef(this);
+  if (Closing)
+    return nullptr;
+
+  return new Event(State);
 }
 
 uint32_t Event::Signature() const
@@ -87,160 +93,145 @@ uint32_t Event::Signature() const
 
 void Event::OnCloseHandle()
 {
-  std::lock_guard<std::mutex> guard(Lock);
+  std::lock_guard<std::mutex> guard(State->Lock);
+
+  if (Closing)
+    return;
 
   Closing = true;
-  Signalled = true;
+  State->Condition.notify_all();
 
-  Condition.notify_all();
+  for (auto it = State->Waits.begin(); it != State->Waits.end();)
+  {
+    if (it->second.Owner != this)
+    {
+      ++it;
+      continue;
+    }
 
-  for (auto& w : Waits)
-    w.second(w.first, true);
+    auto cookie = it->first;
+    auto complete = it->second.Complete;
+    it = State->Waits.erase(it);
 
-  Waits.clear();
+    complete(cookie, true);
+  }
 }
 
 bool Event::GetClosing() const
 {
+  std::lock_guard<std::mutex> guard(State->Lock);
   return Closing;
 }
 
 void Event::SetEvent(Event* source)
 {
-  std::lock_guard<std::mutex> guard(Lock);
-  
-  Signalled = true;
+  (void)source;
 
-  for (auto& w : Waits)
+  std::lock_guard<std::mutex> guard(State->Lock);
+
+  State->Signalled = true;
+
+  if (State->Notification)
   {
-    w.second(w.first, Closing);
-
-    if (!Notification)
-      Signalled = false;
+    for (auto& wait : State->Waits)
+      wait.second.Complete(wait.first, false);
+  }
+  else if (State->Waits.empty() == false)
+  {
+    auto it = State->Waits.begin();
+    State->Signalled = false;
+    it->second.Complete(it->first, false);
   }
 
-  if (Signalled)
-  {
-    auto dlock = DataLock.Lock();
-
-    for (auto& c : CrossRef)
-    {
-      if (c != source && c->Closing == false)
-        c->SetEvent(source);
-    }
-  }
-
-  if (Notification)
-    Condition.notify_all();
-  else
-    Condition.notify_one();
+  if (State->Notification)
+    State->Condition.notify_all();
+  else if (State->Signalled)
+    State->Condition.notify_one();
 }
 
 void Event::ResetEvent(Event* source)
 {
-  std::lock_guard<std::mutex> guard(Lock);
+  (void)source;
 
-  Signalled = false;
-
-  for (auto& c : CrossRef)
-  {
-    if (c != source)
-      c->ResetEvent(source);
-  }
+  std::lock_guard<std::mutex> guard(State->Lock);
+  State->Signalled = false;
 }
 
 bool Event::IsSignalled() const
 {
-  return Signalled;
+  std::lock_guard<std::mutex> guard(State->Lock);
+  return Closing || State->Signalled;
 }
 
 bool Event::Wait(uint32_t ms)
 {
   using namespace std::chrono_literals;
 
-  std::unique_lock<std::mutex> guard(Lock);
-  
+  std::unique_lock<std::mutex> guard(State->Lock);
+
   bool f = true;
-  if (Signalled == false)
+  if (State->Signalled == false && Closing == false)
   {
     if (ms == FOREVER)
     {
-      // The version without a timeout performs faster
-      Condition.wait(guard, [this] {return Signalled == true; });
+      State->Condition.wait(
+        guard
+        , [this]
+          {
+            return State->Signalled || Closing;
+          }
+      );
     }
     else
     {
       auto timeout = ms * 1ms;
-      f = Condition.wait_for(guard, timeout, [this] {return Signalled == true;});
+      f = State->Condition.wait_for(
+        guard
+        , timeout
+        , [this]
+          {
+            return State->Signalled || Closing;
+          }
+      );
     }
   }
 
-  if (f && !Notification)
-    Signalled = false;
+  if (f && Closing == false && State->Signalled && State->Notification == false)
+    State->Signalled = false;
 
   return f;
-}
-
-void Event::AddRef(Event* dup)
-{
-  assert(dup);
-
-  auto guard = DataLock.Lock();
-  
-  if (Closing == false)
-    CrossRef.push_back(dup);
-}
-
-void Event::RemoveRef(Event* dup)
-{
-  auto guard = DataLock.Lock();
-  
-  auto it = std::find(CrossRef.begin(), CrossRef.end(), dup);
-  if (it != CrossRef.end())
-    CrossRef.erase(it);
-}
-
-Event* Event::PopRef()
-{
-  auto guard = DataLock.Lock();
-
-  if (CrossRef.empty())
-    return nullptr;
-
-  auto t = CrossRef.front();
-  CrossRef.pop_front();
-
-  return t;
 }
 
 uint32_t Event::RegisterWait(TWaitComplete complete)
 {
   uint32_t cookie = NextCookie++;
 
-  std::lock_guard<std::mutex> guard(Lock);
-  Waits[cookie] = complete;
+  std::lock_guard<std::mutex> guard(State->Lock);
+  State->Waits[cookie] = EventWait{ this, complete };
 
-  if (Signalled)
+  if (Closing)
   {
-    if (!Notification)
-      Signalled = false;
-
-    complete(cookie, Closing);
+    complete(cookie, true);
   }
-  else if (Closing)
-    complete(cookie, Closing);
+  else if (State->Signalled)
+  {
+    if (State->Notification == false)
+      State->Signalled = false;
+
+    complete(cookie, false);
+  }
 
   return cookie;
 }
 
 bool Event::UnregisterWait(uint32_t cookie)
 {
-  std::lock_guard<std::mutex> guard(Lock);
+  std::lock_guard<std::mutex> guard(State->Lock);
 
-  auto it = Waits.find(cookie);
-  if (it == Waits.end())
+  auto it = State->Waits.find(cookie);
+  if (it == State->Waits.end() || it->second.Owner != this)
     return false;
 
-  Waits.erase(cookie);
+  State->Waits.erase(it);
   return true;
 }
