@@ -41,6 +41,10 @@ namespace Syncme
       WorkerList All;
       WorkerList Unused;
 
+      // Throttles the opportunistic expired-worker sweep in PopUnused so a hot
+      // submit path does not walk Unused under Lock on every dispatch.
+      TimePoint LastExpireSweep;
+
       std::mutex TaskLock;
       TaskList Tasks;
 

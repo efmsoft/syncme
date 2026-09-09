@@ -48,6 +48,7 @@ AsyncTlsStream::AsyncTlsStream(
   , Context(context)
   , Ssl(ssl)
   , OwnSsl(ownSsl)
+  , ResultNotified(false)
   , AdoptedPlainOffset(0)
   , Removing(false)
   , HandshakeStarted(false)
@@ -165,6 +166,8 @@ void AsyncTlsStream::Close()
   Removing = true;
   ShutdownPending = false;
   PendingResults.clear();
+  ResultNotified = false;
+  ResultSink = nullptr;
   AdoptedPlainBuffers.clear();
   AdoptedPlainOffset = 0;
   LowerWriter.Clear();
@@ -401,10 +404,19 @@ bool AsyncTlsStream::PopPendingResult(Result& result)
   std::lock_guard<std::recursive_mutex> guard(Lock);
 
   if (PendingResults.empty())
+  {
+    ResultNotified = false;
     return false;
+  }
 
   result = PendingResults.front();
   PendingResults.pop_front();
+
+  // Re-arm the ready notification once the owner has drained everything, so a
+  // later QueueResult wakes it again.
+  if (PendingResults.empty())
+    ResultNotified = false;
+
   return true;
 }
 
@@ -413,6 +425,30 @@ bool AsyncTlsStream::HasPendingResult() const
   std::lock_guard<std::recursive_mutex> guard(Lock);
 
   return !PendingResults.empty();
+}
+
+void AsyncTlsStream::SetResultSink(std::function<void()> sink)
+{
+  std::lock_guard<std::recursive_mutex> guard(Lock);
+
+  ResultSink = std::move(sink);
+  ResultNotified = false;
+
+  if (ResultSink && !PendingResults.empty())
+  {
+    ResultNotified = true;
+    ResultSink();
+  }
+}
+
+void AsyncTlsStream::NotifyResultReady()
+{
+  // Caller holds Lock.
+  if (ResultNotified || !ResultSink)
+    return;
+
+  ResultNotified = true;
+  ResultSink();
 }
 
 AsyncStreamPtr AsyncTlsStream::GetLowerStream() const
@@ -926,6 +962,7 @@ bool AsyncTlsStream::QueueResult(
   result.Error = error;
 
   PendingResults.push_back(result);
+  NotifyResultReady();
   return true;
 }
 

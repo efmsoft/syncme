@@ -176,12 +176,20 @@ WorkerPtr Pool::PopUnused(size_t& allCount)
 
   WorkerPtr t = Unused.front();
   Unused.pop_front();
-  
+
   ThreadsUnused = Unused.size();
 
   t->CancelExpireTimer();
-  Locked_StopExpired(nullptr);
-  
+
+  // The management timer (CB_OnTimer) and CB_OnFree already reap expired idle
+  // workers. Running a full Unused sweep here on every single dispatch showed up
+  // as a hot path (shared_ptr churn under Lock), so throttle it.
+  if (LastExpireSweep.ElapsedSince() >= MaxIdleTime / 2)
+  {
+    Locked_StopExpired(nullptr);
+    LastExpireSweep = TimePoint();
+  }
+
   return t;
 }
 
@@ -499,15 +507,18 @@ void Pool::Locked_StopExpired(Worker* caller)
 
     for (auto it = Unused.begin(); it != Unused.end(); ++it)
     {
-      WorkerPtr e = *it;
-      if (!e->IsExpired())
+      // Cheap check first: no strong-ref copy for the common non-expired case.
+      Worker* w = it->get();
+      if (!w->IsExpired())
         continue;
 
-      if (caller && e.get() == caller)
+      if (caller && w == caller)
       {
         setTimer = true;
         continue;
       }
+
+      WorkerPtr e = *it;
 
       auto ita = std::find_if(
         All.begin()

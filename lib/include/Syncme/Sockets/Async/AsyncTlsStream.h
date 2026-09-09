@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <deque>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -53,6 +54,14 @@ namespace Syncme
 
         mutable std::recursive_mutex Lock;
         std::deque<Result> PendingResults;
+
+        // Invoked (under Lock) when PendingResults transitions from drained to
+        // non-empty, so the owner can service this stream on demand instead of
+        // polling every stream every loop iteration. ResultNotified suppresses
+        // repeat calls until PopPendingResult drains the queue again.
+        std::function<void()> ResultSink;
+        bool ResultNotified;
+
         std::deque<IO::BufferPtr> AdoptedPlainBuffers;
         size_t AdoptedPlainOffset;
         AsyncWriteQueue LowerWriter;
@@ -107,6 +116,11 @@ namespace Syncme
         SINCMELNK bool PopPendingResult(Result& result);
         SINCMELNK bool HasPendingResult() const;
 
+        // Register (or clear, with nullptr) the ready notification callback.
+        // The callback runs while the internal Lock is held; it must not call
+        // back into this stream.
+        SINCMELNK void SetResultSink(std::function<void()> sink);
+
         SINCMELNK AsyncStreamPtr GetLowerStream() const;
         SINCMELNK SSL* GetSsl() const;
 
@@ -135,6 +149,7 @@ namespace Syncme
         bool QueueError(int error);
         bool QueueReadClosed();
         bool QueueHandshakeCompleted();
+        void NotifyResultReady();
         bool IsWantIO(int error) const;
         int GetSslError(int rc) const;
         void SetSslError(const char* operation, int rc, int sslError);
