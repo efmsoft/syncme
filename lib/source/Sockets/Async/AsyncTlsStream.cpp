@@ -389,7 +389,13 @@ bool AsyncTlsStream::ProcessLowerResult(const Result& result)
   case Operation::Error:
     LowerReadPending = false;
     LowerReadClosed = true;
-    LastError = "lower stream error=" + std::to_string(result.Error);
+    // result.Error is an OS error code here (the lower transport is a raw
+    // socket, never another AsyncTlsStream), unlike the SSL_ERROR_* values
+    // QueueError() carries from the handshake/read/write/shutdown paths below
+    // -- decode it the same way SetSslError() decodes those, so LastError is
+    // always human-readable regardless of which path produced it.
+    LastError = "lower stream error=" + std::to_string(result.Error)
+      + ": " + OSERR(result.Error);
     return QueueError(result.Error);
 
   default:
