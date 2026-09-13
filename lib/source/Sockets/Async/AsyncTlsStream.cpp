@@ -569,6 +569,8 @@ bool AsyncTlsStream::DeliverAdoptedPlaintext()
     AdoptedPlainOffset = 0;
   }
 
+  // Shrinking to size is load-bearing, not hygiene -- see the matching
+  // note in DrivePlainRead() below.
   IO::BufferPtr buffer = PlainReadBuffer;
   buffer->resize(size);
   PlainReadBuffer.reset();
@@ -677,6 +679,11 @@ bool AsyncTlsStream::DrivePlainRead()
 
   if (rc > 0)
   {
+    // Shrinking to rc is load-bearing, not hygiene: some Operation::Read
+    // consumers forward this exact buffer object on as a write payload
+    // using buffer->size() as the byte count, with no separate length
+    // passed alongside it (e.g. Raw::QueueAsyncWrite, when Raw runs over
+    // TLS). Do not drop this.
     IO::BufferPtr buffer = PlainReadBuffer;
     buffer->resize(size_t(rc));
     PlainReadBuffer.reset();

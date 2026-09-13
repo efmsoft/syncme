@@ -532,6 +532,11 @@ namespace
 
       if (buffer != nullptr)
       {
+        // Shrinking to bytes is load-bearing, not hygiene: some callers
+        // (e.g. Raw::QueueAsyncWrite) forward this exact buffer object on
+        // as a write payload using buffer->size() as the byte count, with
+        // no separate length passed alongside it. Do not drop this -- see
+        // AsyncStreamLinux.cpp for the matching Linux-side note.
         buffer->resize(size_t(bytes));
         QueueResultLocked(stream, Operation::Read, buffer, size_t(bytes), 0);
       }

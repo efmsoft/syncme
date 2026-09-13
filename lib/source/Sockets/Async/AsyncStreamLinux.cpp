@@ -502,6 +502,10 @@ namespace
 
       if (n > 0)
       {
+        // Shrinking to n is load-bearing, not hygiene: some callers (e.g.
+        // Raw::QueueAsyncWrite) forward this exact buffer object on as a
+        // write payload using buffer->size() as the byte count, with no
+        // separate length passed alongside it. Do not drop this.
         IO::BufferPtr buffer = stream->ReadBuffer;
         buffer->resize(size_t(n));
 

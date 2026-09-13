@@ -7,6 +7,7 @@
 #include <vector>
 
 #include <Syncme/Api.h>
+#include <Syncme/Sockets/DefaultInitAllocator.h>
 
 namespace Syncme
 {
@@ -18,7 +19,12 @@ namespace Syncme
       constexpr static size_t BUFFER_SIZE = 128ULL * 1024;
       constexpr static size_t KEEP_BUFFERS = 8;
 
-      typedef std::vector<char> Buffer;
+      // Every growth site for this buffer across the codebase (recv/
+      // SSL_read/BIO_read followed by a shrink-to-actual-bytes, or a
+      // resize() immediately followed by a full memcpy) writes the new
+      // range before anyone reads it, so skipping the zero-fill on grow is
+      // safe -- see DefaultInitAllocator.h.
+      typedef std::vector<char, DefaultInitAllocator<char>> Buffer;
       typedef std::shared_ptr<Buffer> BufferPtr;
       typedef std::list<BufferPtr> BufferList;
       typedef std::function<void()> TSignalTxReady;
