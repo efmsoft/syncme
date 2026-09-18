@@ -455,6 +455,15 @@ namespace
           , 0
           , GetSocketError(stream->Skt->Handle)
         );
+
+        // EPOLLONESHOT already keeps the kernel from re-delivering EPOLLERR
+        // for this fd until it's re-armed via UpdateInterestLocked (which we
+        // skip below). But StartRead/StartWrite don't know the socket is
+        // dead yet and can still re-arm it (e.g. a write attempted after a
+        // read-side error), triggering another GetSocketError() for a
+        // connection that's already being torn down. Mark it Removing here,
+        // same as Remove() does, so those calls refuse instead.
+        stream->Removing = true;
         return;
       }
 
