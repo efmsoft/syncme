@@ -1,5 +1,7 @@
 #include <algorithm>
 #include <cassert>
+#include <chrono>
+#include <condition_variable>
 #include <mutex>
 #include <utility>
 #include <vector>
@@ -20,7 +22,18 @@ namespace Syncme
     CookieList Cookies;
 
     bool WaitAll;
-    HEvent Event;
+
+    // A plain flag + condvar instead of a real Event/EventState: nothing
+    // ever calls RegisterWait() on this completion flag (only
+    // EventSignalled()/Completed()/Wait() below touch it directly), so the
+    // full Event machinery -- its own heap-allocated EventState, its
+    // std::map<uint32_t, EventWait> waiter registry -- bought nothing here.
+    // WaitForMultipleObjects() constructs one WaitContext per call, so this
+    // was a make_shared<EventState> on every call, not just every distinct
+    // set of handles waited on (VTune, 2026-09).
+    std::condition_variable Cond;
+    bool Signalled;
+
     std::vector<bool> Bits;
     size_t FirstSignalled;
     bool Failed;
@@ -28,7 +41,7 @@ namespace Syncme
   public:
     WaitContext(bool waitAll, size_t count)
       : WaitAll(waitAll)
-      , Event(CreateNotificationEvent())
+      , Signalled(false)
       , Bits(count)
       , FirstSignalled(count)
       , Failed(false)
@@ -46,7 +59,8 @@ namespace Syncme
       if (WaitAll && count > Bits.size())
         return false;
 
-      return GetEventState(Event) == STATE::SIGNALLED;
+      std::lock_guard<std::mutex> guard(Lock);
+      return Signalled;
     }
 
     void EventSignalled(size_t index, uint32_t cookie, bool failed)
@@ -83,15 +97,38 @@ namespace Syncme
           ++n;
 
       if (WaitAll == false || n == Bits.size() || failed)
-        SetEvent(Event);
+      {
+        Signalled = true;
+        Cond.notify_all();
+      }
     }
 
     WAIT_RESULT Wait(uint32_t ms)
     {
       WAIT_RESULT rc = WAIT_RESULT::OBJECT_0;
 
-      if (GetEventState(Event) != STATE::SIGNALLED)
-        rc = WaitForSingleObject(Event, ms);
+      {
+        std::unique_lock<std::mutex> guard(Lock);
+        if (!Signalled)
+        {
+          if (ms == FOREVER)
+          {
+            Cond.wait(guard, [this] { return Signalled; });
+          }
+          else
+          {
+            using namespace std::chrono_literals;
+            bool signalled = Cond.wait_for(
+              guard
+              , ms * 1ms
+              , [this] { return Signalled; }
+            );
+
+            if (!signalled)
+              rc = WAIT_RESULT::TIMEOUT;
+          }
+        }
+      }
 
       CookieList cookies;
       if (true)

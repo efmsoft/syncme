@@ -42,6 +42,7 @@ Worker::Worker(
   , Started(false)
   , Stopped(false)
   , Exited(false)
+  , ExpireTimerArmed(false)
   , NotifyIdle(notifyIdle)
   , OnTimer(onTimer)
 {
@@ -79,6 +80,8 @@ uint64_t Worker::GetTid() const
 
 void Worker::SetExpireTimer(long ms)
 {
+  ExpireTimerArmed = true;
+
   if (ms)
     SetWaitableTimer(ExpireTimer, ms, 0, nullptr);
   else
@@ -87,8 +90,22 @@ void Worker::SetExpireTimer(long ms)
 
 void Worker::CancelExpireTimer()
 {
+  // Pool::PopUnused() calls this on every worker it hands out, but
+  // SetExpireTimer() only ever runs when CB_OnFree() decides this worker is
+  // surplus (Unused.size() + 1 > MaxUnusedThreads) -- the overwhelming
+  // common case is a worker that was never armed. CancelWaitableTimer()
+  // takes Syncme::Implementation::TimerQueue's single process-wide lock, so
+  // paying for it unconditionally here turned "hand out an idle worker"
+  // into contention with anything else in the process using a waitable
+  // timer (VTune, 2026-09). Skip both calls entirely when nothing was ever
+  // armed -- ExpireTimer is already in its just-constructed/reset state,
+  // so there is nothing for either call to undo.
+  if (!ExpireTimerArmed)
+    return;
+
   CancelWaitableTimer(ExpireTimer);
   ResetEvent(ExpireTimer);
+  ExpireTimerArmed = false;
 }
 
 bool Worker::IsExpired() const

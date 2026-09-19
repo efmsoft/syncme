@@ -1,3 +1,5 @@
+#include <utility>
+
 #include <Syncme/Sockets/Async/AsyncWriteQueue.h>
 
 using namespace Syncme::Sockets::Async;
@@ -40,7 +42,7 @@ bool AsyncWriteQueue::Push(IO::BufferPtr buffer)
   return Push(chain);
 }
 
-bool AsyncWriteQueue::OnWriteCompleted(size_t bytes)
+bool AsyncWriteQueue::OnWriteCompleted(size_t bytes, BufferChain* completed)
 {
   if (!WritePending || Queue.empty())
     return false;
@@ -48,6 +50,9 @@ bool AsyncWriteQueue::OnWriteCompleted(size_t bytes)
   const size_t size = Queue.front().Size();
   if (bytes != size)
     return false;
+
+  if (completed)
+    *completed = std::move(Queue.front());
 
   Queue.pop_front();
   QueuedBytes -= size;

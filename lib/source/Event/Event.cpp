@@ -1,9 +1,10 @@
+#include <algorithm>
 #include <cassert>
 #include <chrono>
 #include <condition_variable>
-#include <map>
 #include <mutex>
 #include <utility>
+#include <vector>
 
 #include <Syncme/Event/Counter.h>
 #include <Syncme/Event/Event.h>
@@ -34,7 +35,13 @@ namespace Syncme
     bool Notification;
     bool Signalled;
 
-    std::map<uint32_t, EventWait> Waits;
+    // Almost always 0-2 entries (one waiter per WaitForMultipleObjects call
+    // on this event, occasionally more for a ThreadPool wait chain), and
+    // RegisterWait/UnregisterWait run on every wait cycle -- a flat vector
+    // with linear scan avoids the per-node allocation std::map paid on each
+    // insert/erase (VTune, 2026-09). Kept as pair<uint32_t, EventWait> (not
+    // a dedicated struct) so existing .first/.second call sites are unchanged.
+    std::vector<std::pair<uint32_t, EventWait>> Waits;
   };
 }
 
@@ -207,7 +214,7 @@ uint32_t Event::RegisterWait(TWaitComplete complete)
   uint32_t cookie = NextCookie++;
 
   std::lock_guard<std::mutex> guard(State->Lock);
-  State->Waits[cookie] = EventWait{ this, complete };
+  State->Waits.emplace_back(cookie, EventWait{ this, complete });
 
   if (Closing)
   {
@@ -228,7 +235,12 @@ bool Event::UnregisterWait(uint32_t cookie)
 {
   std::lock_guard<std::mutex> guard(State->Lock);
 
-  auto it = State->Waits.find(cookie);
+  auto it = std::find_if(
+    State->Waits.begin()
+    , State->Waits.end()
+    , [cookie](const auto& w) { return w.first == cookie; }
+  );
+
   if (it == State->Waits.end() || it->second.Owner != this)
     return false;
 

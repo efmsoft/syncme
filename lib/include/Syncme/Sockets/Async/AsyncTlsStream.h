@@ -77,6 +77,24 @@ namespace Syncme
         bool ShutdownCompleted;
         bool LowerSendShutdownCompleted;
 
+        // Reused across lower-layer encrypted reads (StartLowerRead), same
+        // reasoning as HTTP1_1::ServerReadBuffer: FeedEncryptedInput() only
+        // ever copies this buffer's bytes into OpenSSL's rbio via
+        // BIO_write(), nothing keeps a reference to the buffer object
+        // afterward, so growing the same allocation back to full size on
+        // each read is safe and avoids a fresh ENCRYPTED_READ_SIZE alloc/
+        // free pair on every read (VTune, 2026-09).
+        IO::BufferPtr LowerReadBuffer;
+
+        // Buffers handed to LowerWriter (DrainEncryptedOutput) are reclaimed
+        // here once their write completes (CompleteLowerWrite), instead of
+        // freeing and reallocating a fresh ENCRYPTED_CHUNK_SIZE buffer on
+        // every SSL_write's worth of ciphertext -- unlike LowerReadBuffer,
+        // these buffers are handed off live to the write queue, so more than
+        // one can be outstanding at a time and a single reused member isn't
+        // enough; a small capped free list is (VTune, 2026-09).
+        IO::BufferList FreeEncryptedWriteBuffers;
+
         IO::BufferPtr PlainReadBuffer;
         bool PlainReadPending;
 

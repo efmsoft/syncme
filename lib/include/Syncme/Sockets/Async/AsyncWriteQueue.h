@@ -28,7 +28,12 @@ namespace Syncme
 
         SINCMELNK bool Push(const BufferChain& buffers);
         SINCMELNK bool Push(IO::BufferPtr buffer);
-        SINCMELNK bool OnWriteCompleted(size_t bytes);
+
+        // completed, if non-null, receives the chain that just finished
+        // writing (moved out of the internal queue) so the caller can
+        // recycle its buffers instead of letting them go straight to the
+        // allocator.
+        SINCMELNK bool OnWriteCompleted(size_t bytes, BufferChain* completed = nullptr);
 
         SINCMELNK void Clear();
         SINCMELNK bool IsEmpty() const;

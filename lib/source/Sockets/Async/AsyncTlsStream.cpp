@@ -812,7 +812,18 @@ bool AsyncTlsStream::DrainEncryptedOutput()
       return true;
 
     size_t size = std::min(pending, ENCRYPTED_CHUNK_SIZE);
-    IO::BufferPtr buffer = std::make_shared<IO::Buffer>();
+
+    IO::BufferPtr buffer;
+    if (!FreeEncryptedWriteBuffers.empty())
+    {
+      buffer = FreeEncryptedWriteBuffers.front();
+      FreeEncryptedWriteBuffers.pop_front();
+    }
+    else
+    {
+      buffer = std::make_shared<IO::Buffer>();
+    }
+
     if (buffer == nullptr)
     {
       LastError = "failed to drain encrypted output: buffer allocation failed";
@@ -857,16 +868,19 @@ bool AsyncTlsStream::StartLowerRead()
     return true;
   }
 
-  IO::BufferPtr buffer = std::make_shared<IO::Buffer>();
-  if (buffer == nullptr)
+  if (LowerReadBuffer == nullptr)
   {
-    LastError = "failed to start encrypted lower read: buffer allocation failed";
-    return false;
+    LowerReadBuffer = std::make_shared<IO::Buffer>();
+    if (LowerReadBuffer == nullptr)
+    {
+      LastError = "failed to start encrypted lower read: buffer allocation failed";
+      return false;
+    }
   }
 
-  buffer->resize(ENCRYPTED_READ_SIZE);
+  LowerReadBuffer->resize(ENCRYPTED_READ_SIZE);
 
-  if (!LowerStream->StartRead(buffer))
+  if (!LowerStream->StartRead(LowerReadBuffer))
   {
     LastError = "failed to start encrypted lower read";
     return false;
@@ -924,11 +938,24 @@ bool AsyncTlsStream::FeedEncryptedInput(IO::BufferPtr buffer, size_t bytes)
 
 bool AsyncTlsStream::CompleteLowerWrite(size_t bytes)
 {
-  if (!LowerWriter.OnWriteCompleted(bytes))
+  BufferChain completed;
+  if (!LowerWriter.OnWriteCompleted(bytes, &completed))
   {
     LastError = "encrypted lower write completion mismatch: bytes="
       + std::to_string(bytes);
     return false;
+  }
+
+  constexpr size_t MAX_FREE_ENCRYPTED_BUFFERS = 4;
+  for (auto& view : completed.GetViews())
+  {
+    if (view.Buffer == nullptr || view.Buffer.use_count() != 1)
+      continue;
+
+    if (FreeEncryptedWriteBuffers.size() >= MAX_FREE_ENCRYPTED_BUFFERS)
+      break;
+
+    FreeEncryptedWriteBuffers.push_back(view.Buffer);
   }
 
   return CompleteLowerShutdown();

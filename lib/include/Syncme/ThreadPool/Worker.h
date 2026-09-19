@@ -50,6 +50,7 @@ namespace Syncme
       bool Started;
       bool Stopped;
       bool Exited;
+      bool ExpireTimerArmed;
 
       TOnIdle NotifyIdle;
       TOnTimer OnTimer;
