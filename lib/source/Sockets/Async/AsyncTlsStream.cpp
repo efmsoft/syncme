@@ -459,8 +459,13 @@ void AsyncTlsStream::NotifyResultReady()
 
 AsyncStreamPtr AsyncTlsStream::GetLowerStream() const
 {
-  std::lock_guard<std::recursive_mutex> guard(Lock);
-
+  // LowerStream is set exactly once, in the constructor's initializer list,
+  // and never reassigned anywhere else in this file -- reading it needs no
+  // synchronization with Lock, which otherwise guards genuinely mutable
+  // state shared with GetSsl() and friends. FindTlsStreamLocked() calls this
+  // once per candidate stream on every AsyncEventManager::ProcessEngineResult,
+  // so the recursive_mutex lock/unlock pair here was pure overhead on a read
+  // that can never observe a different value (VTune, 2026-09).
   return LowerStream;
 }
 
