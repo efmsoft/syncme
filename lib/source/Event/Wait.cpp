@@ -3,7 +3,6 @@
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
-#include <utility>
 #include <vector>
 
 #include <Syncme/Sync.h>
@@ -13,24 +12,33 @@ using namespace Syncme;
 
 namespace Syncme
 {
-  typedef std::pair<Event*, uint32_t> WaitCookie;
-  typedef std::vector<WaitCookie> CookieList;
-
   class WaitContext
   {
     std::mutex Lock;
-    CookieList Cookies;
+
+    // One node per event in the array, reserved up front and never resized
+    // afterward: RegisterWait() links each node into its own Event's
+    // intrusive wait list (see EventWaitNode, Event.h), so its address must
+    // stay stable for as long as it's registered.
+    std::vector<EventWaitNode> Nodes;
+
+    // Parallel to Nodes: true while that index's registration still needs
+    // an explicit UnregisterWait() in Wait()'s cleanup pass. Cleared early
+    // by EventSignalled() when the Event already tore the node down itself
+    // (OnCloseHandle, on failure) -- redundantly calling UnregisterWait()
+    // on it again would be harmless (it just returns false) but pointless.
+    std::vector<bool> Pending;
 
     bool WaitAll;
 
     // A plain flag + condvar instead of a real Event/EventState: nothing
     // ever calls RegisterWait() on this completion flag (only
     // EventSignalled()/Completed()/Wait() below touch it directly), so the
-    // full Event machinery -- its own heap-allocated EventState, its
-    // std::map<uint32_t, EventWait> waiter registry -- bought nothing here.
-    // WaitForMultipleObjects() constructs one WaitContext per call, so this
-    // was a make_shared<EventState> on every call, not just every distinct
-    // set of handles waited on (VTune, 2026-09).
+    // full Event machinery -- its own heap-allocated EventState, its own
+    // wait registry -- bought nothing here. WaitForMultipleObjects()
+    // constructs one WaitContext per call, so this was a
+    // make_shared<EventState> on every call, not just every distinct set of
+    // handles waited on (VTune, 2026-09).
     std::condition_variable Cond;
     bool Signalled;
 
@@ -40,7 +48,9 @@ namespace Syncme
 
   public:
     WaitContext(bool waitAll, size_t count)
-      : WaitAll(waitAll)
+      : Nodes(count)
+      , Pending(count, false)
+      , WaitAll(waitAll)
       , Signalled(false)
       , Bits(count)
       , FirstSignalled(count)
@@ -48,10 +58,15 @@ namespace Syncme
     {
     }
 
-    void AddCookie(Syncme::Event* event, uint32_t cookie)
+    EventWaitNode& NodeAt(size_t index)
+    {
+      return Nodes[index];
+    }
+
+    void MarkRegistered(size_t index)
     {
       std::lock_guard<std::mutex> guard(Lock);
-      Cookies.emplace_back(event, cookie);
+      Pending[index] = true;
     }
 
     bool Completed(size_t count)
@@ -70,18 +85,7 @@ namespace Syncme
       if (failed)
       {
         Failed = true;
-
-        auto it = std::find_if(
-          Cookies.begin()
-          , Cookies.end()
-          , [cookie](const auto& wait)
-            {
-              return wait.second == cookie;
-            }
-        );
-
-        if (it != Cookies.end())
-          Cookies.erase(it);
+        Pending[index] = false;
       }
 
       Bits[index] = true;
@@ -103,7 +107,7 @@ namespace Syncme
       }
     }
 
-    WAIT_RESULT Wait(uint32_t ms)
+    WAIT_RESULT Wait(uint32_t ms, const EventArray& events)
     {
       WAIT_RESULT rc = WAIT_RESULT::OBJECT_0;
 
@@ -130,19 +134,23 @@ namespace Syncme
         }
       }
 
-      CookieList cookies;
-      if (true)
+      std::vector<size_t> pendingIndices;
       {
         std::lock_guard<std::mutex> guard(Lock);
 
-        cookies = Cookies;
-        Cookies.clear();
+        for (size_t i = 0; i < Pending.size(); ++i)
+        {
+          if (Pending[i])
+            pendingIndices.push_back(i);
+        }
+
+        std::fill(Pending.begin(), Pending.end(), false);
       }
 
-      for (auto& c : cookies)
+      for (size_t i : pendingIndices)
       {
-        auto f = c.first->UnregisterWait(c.second);
-        assert(f || c.first->GetClosing());
+        auto f = events[i]->UnregisterWait(Nodes[i]);
+        assert(f || events[i]->GetClosing());
       }
 
       if (Failed)
@@ -169,14 +177,15 @@ WAIT_RESULT Syncme::WaitForMultipleObjects(
   size_t index = 0;
   for (auto& e : events)
   {
-    auto cookie = e->RegisterWait(std::bind_front(&WaitContext::EventSignalled, &context, index++));
-    context.AddCookie(e.get(), cookie);
+    e->RegisterWait(context.NodeAt(index), std::bind_front(&WaitContext::EventSignalled, &context, index));
+    context.MarkRegistered(index);
+    ++index;
 
     if (context.Completed(events.size()))
       break;
   }
 
-  WAIT_RESULT rc = context.Wait(ms);
+  WAIT_RESULT rc = context.Wait(ms, events);
   return rc;
 }
 

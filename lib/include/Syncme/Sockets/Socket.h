@@ -11,6 +11,7 @@
 
 #include <Syncme/Api.h>
 #include <Syncme/CritSection.h>
+#include <Syncme/Event/Event.h>
 #include <Syncme/Logger/Channel.h>
 #include <Syncme/Logger/Subsystem.h>
 #include <Syncme/Sockets/ErrorLimit.h>
@@ -174,10 +175,10 @@ namespace Syncme
     static std::mutex TotalsLock;
     static IOCounters Totals;
 
-    uint32_t ExitEventCookie;
-    uint32_t CloseEventCookie;
-    uint32_t BreakEventCookie;
-    uint32_t StartTXEventCookie;
+    EventWaitNode ExitEventNode;
+    EventWaitNode CloseEventNode;
+    EventWaitNode BreakEventNode;
+    EventWaitNode StartTXEventNode;
 
 #if SKTEPOLL
     int Poll;

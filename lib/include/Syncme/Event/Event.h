@@ -14,6 +14,31 @@ namespace Syncme
 
   typedef std::function<void(uint32_t cookie, bool failed)> TWaitComplete;
 
+  // Intrusive doubly-linked-list node for one RegisterWait() subscription.
+  // A caller embeds this directly in its own long-lived object (e.g.
+  // Syncme::Socket) instead of Event allocating anything for it -- so
+  // RegisterWait()/UnregisterWait() are O(1) list splice/unlink operations
+  // regardless of how many OTHER waiters are registered on the SAME Event,
+  // unlike the linear-scan flat vector this replaced. That distinction only
+  // matters for an Event shared by many waiters at once (e.g.
+  // ProxyServer's single process-wide ExitEvent, registered on by every
+  // live Socket) -- a private, per-object event (e.g. SocketPair's own
+  // CloseEvent) has at most a couple of waiters either way (VTune, 2026-09;
+  // cache/wait-registry design discussion, 2026-09).
+  //
+  // Prev/Next/Owner are managed entirely by Event under its own
+  // EventState::Lock; a caller must never touch them. A default-constructed
+  // node is inert (Owner == nullptr) and safe to UnregisterWait() on -- that
+  // just returns false, same as unregistering an already-removed cookie did.
+  struct EventWaitNode
+  {
+    EventWaitNode* Prev = nullptr;
+    EventWaitNode* Next = nullptr;
+    class Event* Owner = nullptr;
+    TWaitComplete Complete;
+    uint32_t Cookie = 0;
+  };
+
   class Event
   {
     std::shared_ptr<EventState> State;
@@ -26,8 +51,8 @@ namespace Syncme
     SINCMELNK virtual uint32_t Signature() const;
     SINCMELNK virtual void OnCloseHandle();
 
-    SINCMELNK virtual uint32_t RegisterWait(TWaitComplete complete);
-    SINCMELNK virtual bool UnregisterWait(uint32_t cookie);
+    SINCMELNK virtual uint32_t RegisterWait(EventWaitNode& node, TWaitComplete complete);
+    SINCMELNK virtual bool UnregisterWait(EventWaitNode& node);
 
   protected:
 

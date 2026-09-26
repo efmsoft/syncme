@@ -54,10 +54,6 @@ Socket::Socket(SocketPair* pair, int handle, bool enableClose)
   , Counters{}
 #endif
 #endif
-  , ExitEventCookie(0)
-  , CloseEventCookie(0)
-  , BreakEventCookie(0)
-  , StartTXEventCookie(0)
 #if SKTEPOLL
   , Poll(-1)
   , EventDescriptor(-1)
@@ -81,8 +77,9 @@ Socket::Socket(SocketPair* pair, int handle, bool enableClose)
     std::bind(&Socket::EventSignalled, this, WAIT_RESULT::OBJECT_4, 0, false)
   );
   
-  StartTXEventCookie = StartTX->RegisterWait(
-    std::bind(&Socket::EventSignalled, this, WAIT_RESULT::OBJECT_4, _1, _2)
+  StartTX->RegisterWait(
+    StartTXEventNode
+    , std::bind(&Socket::EventSignalled, this, WAIT_RESULT::OBJECT_4, _1, _2)
   );
 
   Poll = epoll_create(1);
@@ -118,10 +115,9 @@ Socket::~Socket()
   CloseHandle(RxEvent);
 
 #if SKTEPOLL || defined(_WIN32)
-  if (BreakRead && BreakEventCookie)
+  if (BreakRead && BreakEventNode.Owner)
   {
-    BreakRead->UnregisterWait(BreakEventCookie);
-    BreakEventCookie = 0;
+    BreakRead->UnregisterWait(BreakEventNode);
   }
 #endif
 
@@ -132,10 +128,9 @@ Socket::~Socket()
 #endif
 
 #if SKTEPOLL
-  if (StartTXEventCookie)
+  if (StartTXEventNode.Owner)
   {
-    StartTX->UnregisterWait(StartTXEventCookie);
-    StartTXEventCookie = 0;
+    StartTX->UnregisterWait(StartTXEventNode);
   }
 #endif
 
@@ -259,16 +254,14 @@ int Socket::Detach(bool* enableClose)
 #if SKTEPOLL
   if (Handle != -1)
   {
-    if (ExitEventCookie)
+    if (ExitEventNode.Owner)
     {
-      Pair->GetExitEvent()->UnregisterWait(ExitEventCookie);
-      ExitEventCookie = 0;
+      Pair->GetExitEvent()->UnregisterWait(ExitEventNode);
     }
 
-    if (CloseEventCookie)
+    if (CloseEventNode.Owner)
     {
-      Pair->GetCloseEvent()->UnregisterWait(CloseEventCookie);
-      CloseEventCookie = 0;
+      Pair->GetCloseEvent()->UnregisterWait(CloseEventNode);
     }
 
     epoll_event ev{};
@@ -282,10 +275,9 @@ int Socket::Detach(bool* enableClose)
 #endif
 
 #ifdef _WIN32
-  if (CloseEventCookie)
+  if (CloseEventNode.Owner)
   {
-    Pair->GetCloseEvent()->UnregisterWait(CloseEventCookie);
-    CloseEventCookie = 0;
+    Pair->GetCloseEvent()->UnregisterWait(CloseEventNode);
   }
 #endif
 
@@ -333,12 +325,14 @@ bool Socket::Attach(int socket, bool enableClose)
   EnableClose = enableClose;
 
 #if SKTEPOLL
-  ExitEventCookie = Pair->GetExitEvent()->RegisterWait(
-    std::bind(&Socket::EventSignalled, this, WAIT_RESULT::OBJECT_0, _1, _2)
+  Pair->GetExitEvent()->RegisterWait(
+    ExitEventNode
+    , std::bind(&Socket::EventSignalled, this, WAIT_RESULT::OBJECT_0, _1, _2)
   );
 
-  CloseEventCookie = Pair->GetCloseEvent()->RegisterWait(
-    std::bind(&Socket::EventSignalled, this, WAIT_RESULT::OBJECT_1, _1, _2)
+  Pair->GetCloseEvent()->RegisterWait(
+    CloseEventNode
+    , std::bind(&Socket::EventSignalled, this, WAIT_RESULT::OBJECT_1, _1, _2)
   );
 
   epoll_event ev{};
@@ -495,10 +489,9 @@ bool Socket::SwitchToBlockingMode()
   if (BreakRead)
   {
 #if SKTEPOLL || defined(_WIN32)
-    if (BreakEventCookie)
+    if (BreakEventNode.Owner)
     {
-      BreakRead->UnregisterWait(BreakEventCookie);
-      BreakEventCookie = 0;
+      BreakRead->UnregisterWait(BreakEventNode);
     }
 #endif
     CloseHandle(BreakRead);
@@ -549,12 +542,14 @@ bool Socket::SwitchToUnblockingMode()
       return false;
     }
 #if SKTEPOLL
-    BreakEventCookie = BreakRead->RegisterWait(
-      std::bind(&Socket::EventSignalled, this, WAIT_RESULT::OBJECT_3, _1, _2)
+    BreakRead->RegisterWait(
+      BreakEventNode
+      , std::bind(&Socket::EventSignalled, this, WAIT_RESULT::OBJECT_3, _1, _2)
     );
 #elif defined(_WIN32)
-    BreakEventCookie = BreakRead->RegisterWait(
-      std::bind(&Socket::SignallWindowsEvent, this, WBreakWait, _1, _2)
+    BreakRead->RegisterWait(
+      BreakEventNode
+      , std::bind(&Socket::SignallWindowsEvent, this, WBreakWait, _1, _2)
     );
 #endif
   }

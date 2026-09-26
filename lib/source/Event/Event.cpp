@@ -1,10 +1,7 @@
-#include <algorithm>
 #include <cassert>
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
-#include <utility>
-#include <vector>
 
 #include <Syncme/Event/Counter.h>
 #include <Syncme/Event/Event.h>
@@ -15,12 +12,6 @@ using namespace Syncme;
 
 namespace Syncme
 {
-  struct EventWait
-  {
-    Event* Owner;
-    TWaitComplete Complete;
-  };
-
   struct EventState
   {
     EventState(bool notification, bool signalled)
@@ -35,14 +26,47 @@ namespace Syncme
     bool Notification;
     bool Signalled;
 
-    // Almost always 0-2 entries (one waiter per WaitForMultipleObjects call
-    // on this event, occasionally more for a ThreadPool wait chain), and
-    // RegisterWait/UnregisterWait run on every wait cycle -- a flat vector
-    // with linear scan avoids the per-node allocation std::map paid on each
-    // insert/erase (VTune, 2026-09). Kept as pair<uint32_t, EventWait> (not
-    // a dedicated struct) so existing .first/.second call sites are unchanged.
-    std::vector<std::pair<uint32_t, EventWait>> Waits;
+    // Intrusive doubly-linked list of currently-registered EventWaitNode's
+    // (see Event.h) -- O(1) insert/remove regardless of length. Replaces a
+    // flat vector with linear-scan erase that was fine for a private event
+    // with 0-2 waiters but scaled badly for an event shared by many waiters
+    // at once, e.g. ProxyServer's single process-wide ExitEvent, registered
+    // on by every live Socket (wait-registry design discussion, 2026-09).
+    EventWaitNode* WaitsHead = nullptr;
+    EventWaitNode* WaitsTail = nullptr;
   };
+
+  namespace
+  {
+    void LinkWait(EventState& state, EventWaitNode& node)
+    {
+      node.Prev = state.WaitsTail;
+      node.Next = nullptr;
+
+      if (state.WaitsTail)
+        state.WaitsTail->Next = &node;
+      else
+        state.WaitsHead = &node;
+
+      state.WaitsTail = &node;
+    }
+
+    void UnlinkWait(EventState& state, EventWaitNode& node)
+    {
+      if (node.Prev)
+        node.Prev->Next = node.Next;
+      else
+        state.WaitsHead = node.Next;
+
+      if (node.Next)
+        node.Next->Prev = node.Prev;
+      else
+        state.WaitsTail = node.Prev;
+
+      node.Prev = nullptr;
+      node.Next = nullptr;
+    }
+  }
 }
 
 std::atomic<uint64_t> Syncme::EventObjects{};
@@ -71,8 +95,8 @@ Event::~Event()
   {
     std::lock_guard<std::mutex> guard(State->Lock);
 
-    for (auto& wait : State->Waits)
-      assert(wait.second.Owner != this);
+    for (auto* node = State->WaitsHead; node; node = node->Next)
+      assert(node->Owner != this);
   }
 
   EventObjects--;
@@ -108,19 +132,23 @@ void Event::OnCloseHandle()
   Closing = true;
   State->Condition.notify_all();
 
-  for (auto it = State->Waits.begin(); it != State->Waits.end();)
+  EventWaitNode* node = State->WaitsHead;
+  while (node)
   {
-    if (it->second.Owner != this)
+    EventWaitNode* next = node->Next;
+
+    if (node->Owner == this)
     {
-      ++it;
-      continue;
+      auto cookie = node->Cookie;
+      auto complete = node->Complete;
+
+      UnlinkWait(*State, *node);
+      node->Owner = nullptr;
+
+      complete(cookie, true);
     }
 
-    auto cookie = it->first;
-    auto complete = it->second.Complete;
-    it = State->Waits.erase(it);
-
-    complete(cookie, true);
+    node = next;
   }
 }
 
@@ -140,14 +168,13 @@ void Event::SetEvent(Event* source)
 
   if (State->Notification)
   {
-    for (auto& wait : State->Waits)
-      wait.second.Complete(wait.first, false);
+    for (auto* node = State->WaitsHead; node; node = node->Next)
+      node->Complete(node->Cookie, false);
   }
-  else if (State->Waits.empty() == false)
+  else if (State->WaitsHead != nullptr)
   {
-    auto it = State->Waits.begin();
     State->Signalled = false;
-    it->second.Complete(it->first, false);
+    State->WaitsHead->Complete(State->WaitsHead->Cookie, false);
   }
 
   if (State->Notification)
@@ -209,18 +236,40 @@ bool Event::Wait(uint32_t ms)
   return f;
 }
 
-uint32_t Event::RegisterWait(TWaitComplete complete)
+uint32_t Event::RegisterWait(EventWaitNode& node, TWaitComplete complete)
 {
+  // A node mid-registration (on this Event or a duplicate handle sharing
+  // the same EventState) must be UnregisterWait()'d first -- re-linking it
+  // here would silently corrupt whichever list it's already threaded into.
+  assert(node.Owner == nullptr);
+
   uint32_t cookie = NextCookie++;
 
   std::lock_guard<std::mutex> guard(State->Lock);
-  State->Waits.emplace_back(cookie, EventWait{ this, complete });
 
+  // Already closing: don't link at all. Leaving the node linked here (as
+  // the old flat-vector Waits did, since RegisterWait() never erased on
+  // this branch) meant the caller had to know a Complete(..., true) it
+  // just received was really "still registered, still your job to
+  // UnregisterWait()" -- easy to get wrong (WaitContext below relies on
+  // exactly that distinction), and with an intrusive list, a caller who
+  // gets it wrong leaves a live node pointing into memory it's about to
+  // free. Reporting "closing" without ever linking removes the ambiguity:
+  // a Complete(cookie, true) from RegisterWait() always means the node was
+  // never linked and never needs UnregisterWait().
   if (Closing)
   {
+    node.Cookie = cookie;
     complete(cookie, true);
+    return cookie;
   }
-  else if (State->Signalled)
+
+  node.Owner = this;
+  node.Complete = complete;
+  node.Cookie = cookie;
+  LinkWait(*State, node);
+
+  if (State->Signalled)
   {
     if (State->Notification == false)
       State->Signalled = false;
@@ -231,19 +280,15 @@ uint32_t Event::RegisterWait(TWaitComplete complete)
   return cookie;
 }
 
-bool Event::UnregisterWait(uint32_t cookie)
+bool Event::UnregisterWait(EventWaitNode& node)
 {
   std::lock_guard<std::mutex> guard(State->Lock);
 
-  auto it = std::find_if(
-    State->Waits.begin()
-    , State->Waits.end()
-    , [cookie](const auto& w) { return w.first == cookie; }
-  );
-
-  if (it == State->Waits.end() || it->second.Owner != this)
+  if (node.Owner != this)
     return false;
 
-  State->Waits.erase(it);
+  UnlinkWait(*State, node);
+  node.Owner = nullptr;
+
   return true;
 }

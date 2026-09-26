@@ -16,31 +16,32 @@ void Socket::InitWin32Events()
 {
   WBreakWait = CreateEventA(nullptr, false, false, nullptr);
 
-  ExitEventCookie = Pair->GetExitEvent()->RegisterWait(
-    std::bind_front(&Socket::SignallWindowsEvent, this, WBreakWait)
+  Pair->GetExitEvent()->RegisterWait(
+    ExitEventNode
+    , std::bind_front(&Socket::SignallWindowsEvent, this, WBreakWait)
   );
 
-  CloseEventCookie = Pair->GetCloseEvent()->RegisterWait(
-    std::bind_front(&Socket::SignallWindowsEvent, this, WBreakWait)
+  Pair->GetCloseEvent()->RegisterWait(
+    CloseEventNode
+    , std::bind_front(&Socket::SignallWindowsEvent, this, WBreakWait)
   );
 
-  StartTXEventCookie = StartTX->RegisterWait(
-    std::bind_front(&Socket::SignallWindowsEvent, this, WBreakWait)
+  StartTX->RegisterWait(
+    StartTXEventNode
+    , std::bind_front(&Socket::SignallWindowsEvent, this, WBreakWait)
   );
 }
 
 void Socket::FreeWin32Events()
 {
-  if (ExitEventCookie)
+  if (ExitEventNode.Owner)
   {
-    Pair->GetExitEvent()->UnregisterWait(ExitEventCookie);
-    ExitEventCookie = 0;
+    Pair->GetExitEvent()->UnregisterWait(ExitEventNode);
   }
-  
-  if (StartTXEventCookie)
+
+  if (StartTXEventNode.Owner)
   {
-    StartTX->UnregisterWait(StartTXEventCookie);
-    StartTXEventCookie = 0;
+    StartTX->UnregisterWait(StartTXEventNode);
   }
 
   if (WBreakWait)

@@ -105,7 +105,7 @@ bool SocketEvent::Wait(uint32_t ms)
   return f;
 }
 
-uint32_t SocketEvent::RegisterWait(TWaitComplete complete)
+uint32_t SocketEvent::RegisterWait(EventWaitNode& node, TWaitComplete complete)
 {
 #ifdef _WIN32
   if (EventMask & EVENT_READ)
@@ -120,12 +120,12 @@ uint32_t SocketEvent::RegisterWait(TWaitComplete complete)
 #endif
 
   WaitManager::AddSocketEvent(this);
-  return Event::RegisterWait(complete);
+  return Event::RegisterWait(node, complete);
 }
 
-bool SocketEvent::UnregisterWait(uint32_t cookie)
+bool SocketEvent::UnregisterWait(EventWaitNode& node)
 {
-  bool f = Event::UnregisterWait(cookie);
+  bool f = Event::UnregisterWait(node);
 
   if (f)
     WaitManager::RemoveSocketEvent(this);

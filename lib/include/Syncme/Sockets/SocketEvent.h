@@ -45,8 +45,8 @@ namespace Syncme
 
       SINCMELNK void OnCloseHandle() override;
       SINCMELNK bool Wait(uint32_t ms) override;
-      SINCMELNK uint32_t RegisterWait(TWaitComplete complete) override;
-      SINCMELNK bool UnregisterWait(uint32_t cookie) override;
+      SINCMELNK uint32_t RegisterWait(EventWaitNode& node, TWaitComplete complete) override;
+      SINCMELNK bool UnregisterWait(EventWaitNode& node) override;
       SINCMELNK uint32_t Signature() const override;
       SINCMELNK static bool IsSocketEvent(HEvent h);
 
