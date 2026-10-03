@@ -1,4 +1,5 @@
 #include <cassert>
+#include <limits>
 
 #include <Syncme/SetThreadName.h>
 #include <Syncme/TickCount.h>
@@ -20,6 +21,8 @@ uint64_t Syncme::GetQueuedTimers() {return Syncme::QueuedTimers;}
 TimerQueue::TimerQueue()
   : EvStop(CreateNotificationEvent())
   , EvUpdate(CreateSynchronizationEvent())
+  , WakeDeadline(0)
+  , WakeSteadyDeadline()
 {
 }
 
@@ -45,6 +48,34 @@ void TimerQueue::Stop()
 
   Queue.clear();
   QueuedTimers = 0;
+  WakeDeadline = 0;
+}
+
+void TimerQueue::WakeForEarlierTimer(uint64_t dueTime, long delay)
+{
+  // The caller holds Lock, as does GetSleepTime when publishing the deadline.
+  if (WakeDeadline == 0)
+  {
+    return;
+  }
+
+  bool earlier = dueTime < WakeDeadline;
+  if (!earlier && uint64_t(delay) < uint64_t(FOREVER))
+  {
+    // GetTimeInMillisec uses wall time on Linux, while wait_for is relative.
+    // A forward clock adjustment must not hide a newly inserted short timer.
+    auto nextWake = std::chrono::steady_clock::now() + std::chrono::milliseconds(delay);
+    earlier = nextWake < WakeSteadyDeadline;
+  }
+
+  // EvUpdate retains a signal sent before WaitForMultipleObjects registers it.
+  if (earlier)
+  {
+    // Coalesce updates until the worker takes its next queue snapshot. This
+    // also covers a signal delivered while the previous wait is being removed.
+    WakeDeadline = 0;
+    SetEvent(EvUpdate);
+  }
 }
 
 bool TimerQueue::SetTimer(
@@ -70,7 +101,7 @@ bool TimerQueue::SetTimer(
     if (t->EvTimer.get() == timer.get())
     {
       t->Set(dueTime);
-      SetEvent(EvUpdate);
+      WakeForEarlierTimer(t->NextDueTime, dueTime);
       return true;
     }
   }
@@ -84,7 +115,7 @@ bool TimerQueue::SetTimer(
   if (Thread == nullptr)
     Thread = std::make_shared<std::jthread>(&TimerQueue::Worker, this);
   else
-    SetEvent(EvUpdate);
+    WakeForEarlierTimer(t->NextDueTime, dueTime);
 
   return true;
 }
@@ -145,7 +176,10 @@ bool TimerQueue::GetSleepTime(uint32_t& ms)
     return false;
 
   if (Queue.empty())
+  {
     ms = FOREVER;
+    WakeDeadline = (std::numeric_limits<uint64_t>::max)();
+  }
   else
   {
     uint64_t min = (uint64_t)-1LL;
@@ -156,12 +190,31 @@ bool TimerQueue::GetSleepTime(uint32_t& ms)
         min = t->NextDueTime;
     }
 
+    auto waitStart = std::chrono::steady_clock::now();
     auto t = GetTimeInMillisec();
 
-    if (t > min)
+    if (t >= min)
+    {
       ms = 0;
+      WakeDeadline = 0;
+    }
     else
-      ms = uint32_t(min - t);
+    {
+      // FOREVER is reserved. Long finite delays are checked in bounded steps;
+      // advertise the actual wake deadline, not a truncated uint32_t delay.
+      const uint64_t delay = min - t;
+      if (delay >= uint64_t(FOREVER))
+      {
+        ms = FOREVER - 1;
+      }
+      else
+      {
+        ms = uint32_t(delay);
+      }
+
+      WakeDeadline = t + ms;
+      WakeSteadyDeadline = waitStart + std::chrono::milliseconds(ms);
+    }
   }
 
   Lock.unlock();
@@ -174,9 +227,9 @@ bool TimerQueue::SignallOne()
 
   for (auto it = Queue.begin(); it != Queue.end(); ++it)
   {
-    TimerPtr t = *it;
-    if (t->NextDueTime <= now)
+    if ((*it)->NextDueTime <= now)
     {
+      TimerPtr t = *it;
       auto timer = static_cast<WaitableTimer*>(t->EvTimer.get());
       auto callback = t->Callback;
       HEvent callbackTimer;
@@ -220,6 +273,10 @@ void TimerQueue::SignallTimers()
   {
     if (!TryLock())
       return;
+
+    // The wait has ended. SetTimer need not wake an already active worker;
+    // GetSleepTime will publish the next deadline under this same lock.
+    WakeDeadline = 0;
 
     // if SignallOne returns false, mutex is locked
     if (!SignallOne())

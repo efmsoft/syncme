@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -40,6 +41,12 @@ namespace Syncme
       static TimerQueuePtr& Ptr();
 
     private:
+      // Protected by Lock. Zero means no wait needs interrupting (the worker
+      // is active, or an update is already pending); UINT64_MAX means FOREVER.
+      uint64_t WakeDeadline;
+      std::chrono::steady_clock::time_point WakeSteadyDeadline;
+
+      void WakeForEarlierTimer(uint64_t dueTime, long delay);
       void Stop();
       void Worker();
 
