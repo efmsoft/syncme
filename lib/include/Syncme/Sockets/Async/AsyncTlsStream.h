@@ -152,6 +152,12 @@ namespace Syncme
         bool DrivePlainWrite();
         bool DriveShutdown();
         bool DrainEncryptedOutput();
+
+        // Ciphertext made by SSL_write and not yet written to the lower
+        // stream: still in the write BIO, or queued at / in flight in the lower
+        // writer (whose Size() counts a chunk until its write has completed).
+        size_t UnwrittenCiphertext() const;
+
         bool StartLowerRead();
         bool FeedEncryptedInput(IO::BufferPtr buffer, size_t bytes);
         bool CompleteLowerWrite(size_t bytes);

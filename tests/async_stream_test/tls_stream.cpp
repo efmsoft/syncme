@@ -175,6 +175,34 @@ namespace
     Rig(const Rig&) = delete;
     Rig& operator=(const Rig&) = delete;
 
+    // The oldest lower write the client has started and the network has not
+    // yet carried: its bytes go to the server, then the write completes (which
+    // is when the client goes on with what it has left to send). False when
+    // there is none.
+    bool DeliverOneWrite()
+    {
+      if (Delivered >= Lower->Writes.size())
+        return false;
+
+      const AsyncTest::WriteRecord record = Lower->Writes[Delivered++];
+
+      EXPECT_EQ(
+        BIO_write(ServerIn, record.Bytes.data(), int(record.Bytes.size()))
+        , int(record.Bytes.size())
+      );
+
+      ServerStep();
+
+      Result result;
+      result.Stream = Lower;
+      result.Context = &Marker;
+      result.Op = Operation::Write;
+      result.Bytes = record.Bytes.size();
+      EXPECT_TRUE(Tls->ProcessLowerResult(result));
+
+      return true;
+    }
+
     // Hands the client's ciphertext to the server and completes the lower
     // writes, hands the server's to the client whenever it has a read
     // pending, until nothing moves any more.
@@ -184,24 +212,8 @@ namespace
       {
         bool progress = false;
 
-        while (Delivered < Lower->Writes.size())
+        while (DeliverOneWrite())
         {
-          const AsyncTest::WriteRecord record = Lower->Writes[Delivered++];
-
-          EXPECT_EQ(
-            BIO_write(ServerIn, record.Bytes.data(), int(record.Bytes.size()))
-            , int(record.Bytes.size())
-          );
-
-          ServerStep();
-
-          Result result;
-          result.Stream = Lower;
-          result.Context = &Marker;
-          result.Op = Operation::Write;
-          result.Bytes = record.Bytes.size();
-          EXPECT_TRUE(Tls->ProcessLowerResult(result));
-
           progress = true;
         }
 
@@ -585,4 +597,327 @@ TEST(async_tls_stream, a_write_larger_than_one_record_is_delivered_whole)
   EXPECT_EQ(rig.ServerReceived.size(), payload.size());
   EXPECT_TRUE(rig.ServerReceived == payload);
   EXPECT_FALSE(rig.Tls->HasPendingResult());
+}
+
+namespace
+{
+  // The stream's limit on ciphertext that is not yet written to the lower
+  // stream, and the most one lower write can hold: the limit and one more
+  // record (16 KB of plaintext and the TLS framing around it).
+  constexpr size_t BatchLimit = 64 * 1024;
+  constexpr size_t BiggestChunk = BatchLimit + 16 * 1024 + 512;
+
+  std::string Pattern(size_t size, size_t seed = 0)
+  {
+    std::string text(size, '\0');
+    for (size_t i = 0; i < size; ++i)
+    {
+      text[i] = char('A' + ((i + seed) * 7 + (i + seed) / 251) % 26);
+    }
+
+    return text;
+  }
+
+  IO::BufferPtr BufferOf(const std::string& text)
+  {
+    return std::make_shared<IO::Buffer>(text.begin(), text.end());
+  }
+
+  // Past the handshake, and its result collected
+  void Established(Rig& rig)
+  {
+    rig.Handshake();
+
+    Result result;
+    ASSERT_TRUE(rig.Tls->PopPendingResult(result));
+    ASSERT_EQ(result.Op, Operation::Handshake);
+  }
+}
+
+TEST(async_tls_stream_batching, a_large_write_goes_down_in_a_few_big_chunks)
+{
+  Rig rig;
+  Established(rig);
+
+  const std::string payload = Pattern(1024 * 1024);
+
+  BufferChain chain;
+  ASSERT_TRUE(chain.Add(BufferOf(payload)));
+
+  const size_t before = rig.Lower->Writes.size();
+  ASSERT_TRUE(rig.Tls->StartWrite(chain));
+  rig.Pump();
+
+  Result result;
+  ASSERT_TRUE(rig.Tls->PopPendingResult(result));
+  EXPECT_EQ(result.Op, Operation::Write);
+  EXPECT_EQ(result.Bytes, payload.size());
+  EXPECT_EQ(result.Error, 0);
+
+  EXPECT_EQ(rig.ServerReceived.size(), payload.size());
+  EXPECT_TRUE(rig.ServerReceived == payload);
+
+  // 64 records of 16 KB: one lower write each when a record was written as soon
+  // as it was made, about a quarter of that in batches of the limit
+  const size_t writes = rig.Lower->Writes.size() - before;
+  EXPECT_GE(writes, 12u);
+  EXPECT_LE(writes, 20u);
+
+  for (size_t i = before; i < rig.Lower->Writes.size(); ++i)
+  {
+    const size_t size = rig.Lower->Writes[i].Bytes.size();
+    EXPECT_LE(size, BiggestChunk) << "write " << i;
+
+    // every chunk but the last is a full batch
+    if (i + 1 < rig.Lower->Writes.size())
+      EXPECT_GE(size, BatchLimit) << "write " << i;
+
+    // and a batch is one buffer
+    EXPECT_EQ(rig.Lower->Writes[i].Buffers.size(), 1u) << "write " << i;
+  }
+}
+
+TEST(async_tls_stream_batching, ciphertext_not_yet_written_stays_bounded_while_the_lower_stream_is_slow)
+{
+  Rig rig;
+  Established(rig);
+
+  const std::string payload = Pattern(1024 * 1024, 5);
+
+  BufferChain chain;
+  ASSERT_TRUE(chain.Add(BufferOf(payload)));
+
+  const size_t before = rig.Lower->Writes.size();
+  ASSERT_TRUE(rig.Tls->StartWrite(chain));
+
+  // the lower stream is not completing anything: one batch has been handed
+  // over, and that is all
+  ASSERT_EQ(rig.Lower->Writes.size() - before, 1u);
+
+  const size_t first = rig.Lower->Writes.back().Bytes.size();
+  EXPECT_GE(first, BatchLimit);
+  EXPECT_LE(first, BiggestChunk);
+
+  auto diagnostics = rig.Tls->GetDiagnostics();
+  EXPECT_TRUE(diagnostics.LowerWritePending);
+  EXPECT_EQ(diagnostics.LowerWriteBytes, first);
+  EXPECT_EQ(diagnostics.LowerWriteCount, 1u);
+  EXPECT_TRUE(diagnostics.PlainWritePending);
+
+  // another event drives the stream again (a read is started): it adds no
+  // ciphertext behind the chunk
+  auto read = std::make_shared<IO::Buffer>(64, '.');
+  ASSERT_TRUE(rig.Tls->StartRead(read));
+  EXPECT_EQ(rig.Lower->Writes.size() - before, 1u);
+  EXPECT_EQ(rig.Tls->GetDiagnostics().LowerWriteBytes, first);
+
+  EXPECT_FALSE(rig.Tls->HasPendingResult());
+
+  // the lower stream catches up: one batch per completion, never more than a
+  // batch outstanding, and the write is answered only after the last of them
+  size_t completions = 0;
+  while (rig.DeliverOneWrite())
+  {
+    ++completions;
+
+    EXPECT_LE(rig.Tls->GetDiagnostics().LowerWriteBytes, BiggestChunk);
+
+    const bool more = rig.Delivered < rig.Lower->Writes.size();
+    EXPECT_EQ(rig.Tls->HasPendingResult(), !more) << "after completion " << completions;
+  }
+
+  EXPECT_GE(completions, 12u);
+
+  Result result;
+  ASSERT_TRUE(rig.Tls->PopPendingResult(result));
+  EXPECT_EQ(result.Op, Operation::Write);
+  EXPECT_EQ(result.Bytes, payload.size());
+  EXPECT_FALSE(rig.Tls->HasPendingResult());
+
+  EXPECT_TRUE(rig.ServerReceived == payload);
+}
+
+TEST(async_tls_stream_batching, many_small_views_are_written_together)
+{
+  Rig rig;
+  Established(rig);
+
+  std::string expected;
+  BufferChain chain;
+  for (int i = 0; i < 50; ++i)
+  {
+    const std::string piece = Pattern(100, size_t(i) * 13);
+    ASSERT_TRUE(chain.Add(BufferOf(piece)));
+    expected += piece;
+  }
+
+  const size_t before = rig.Lower->Writes.size();
+  ASSERT_TRUE(rig.Tls->StartWrite(chain));
+  rig.Pump();
+
+  // fifty records, one lower write
+  EXPECT_EQ(rig.Lower->Writes.size() - before, 1u);
+
+  Result result;
+  ASSERT_TRUE(rig.Tls->PopPendingResult(result));
+  EXPECT_EQ(result.Op, Operation::Write);
+  EXPECT_EQ(result.Bytes, expected.size());
+
+  EXPECT_TRUE(rig.ServerReceived == expected);
+}
+
+TEST(async_tls_stream_batching, views_of_all_sizes_cross_the_batches_without_losing_a_byte)
+{
+  Rig rig;
+  Established(rig);
+
+  const std::vector<size_t> sizes = {
+    10 * 1024, 70 * 1024, 3, 40 * 1024 + 7, 100, 130 * 1024, 1, 16 * 1024, 16 * 1024 - 1, 17 * 1024
+  };
+
+  std::string expected;
+  BufferChain chain;
+  for (size_t i = 0; i < sizes.size(); ++i)
+  {
+    const std::string piece = Pattern(sizes[i], i * 1000);
+    ASSERT_TRUE(chain.Add(BufferOf(piece)));
+    expected += piece;
+  }
+
+  ASSERT_TRUE(rig.Tls->StartWrite(chain));
+  rig.Pump();
+
+  Result result;
+  ASSERT_TRUE(rig.Tls->PopPendingResult(result));
+  EXPECT_EQ(result.Op, Operation::Write);
+  EXPECT_EQ(result.Bytes, expected.size());
+  EXPECT_FALSE(rig.Tls->HasPendingResult());
+
+  EXPECT_EQ(rig.ServerReceived.size(), expected.size());
+  EXPECT_TRUE(rig.ServerReceived == expected);
+}
+
+TEST(async_tls_stream_batching, a_small_write_is_still_one_lower_write_and_is_answered_after_it)
+{
+  Rig rig;
+  Established(rig);
+
+  const std::string payload = Pattern(5000);
+
+  BufferChain chain;
+  ASSERT_TRUE(chain.Add(BufferOf(payload)));
+
+  const size_t before = rig.Lower->Writes.size();
+  ASSERT_TRUE(rig.Tls->StartWrite(chain));
+
+  ASSERT_EQ(rig.Lower->Writes.size() - before, 1u);
+  EXPECT_FALSE(rig.Tls->HasPendingResult());
+
+  ASSERT_TRUE(rig.DeliverOneWrite());
+
+  Result result;
+  ASSERT_TRUE(rig.Tls->PopPendingResult(result));
+  EXPECT_EQ(result.Op, Operation::Write);
+  EXPECT_EQ(result.Bytes, payload.size());
+  EXPECT_TRUE(rig.ServerReceived == payload);
+}
+
+TEST(async_tls_stream_batching, random_chains_always_arrive_whole_and_are_always_answered)
+{
+  Rig rig;
+  Established(rig);
+
+  // sizes around the record size (16 KB), the limit (64 KB) and their multiples
+  const std::vector<size_t> edges = {
+    1, 2, 100, 16 * 1024 - 1, 16 * 1024, 16 * 1024 + 1
+    , 32 * 1024, 48 * 1024 + 5, 64 * 1024 - 1, 64 * 1024, 64 * 1024 + 1
+    , 65624, 80 * 1024, 128 * 1024, 128 * 1024 + 1, 200 * 1024
+  };
+
+  unsigned state = 12345;
+  auto next = [&state](unsigned bound) {
+    state = state * 1103515245u + 12345u;
+    return (state >> 8) % bound;
+  };
+
+  std::string expected;
+  for (int round = 0; round < 120; ++round)
+  {
+    BufferChain chain;
+    size_t total = 0;
+
+    const unsigned views = 1 + next(5);
+    for (unsigned v = 0; v < views; ++v)
+    {
+      size_t size = edges[next(unsigned(edges.size()))];
+      if (next(3) == 0)
+        size = 1 + next(40 * 1024);
+
+      const std::string piece = Pattern(size, size_t(round) * 31 + v);
+      ASSERT_TRUE(chain.Add(BufferOf(piece)));
+      expected += piece;
+      total += size;
+    }
+
+    ASSERT_TRUE(rig.Tls->StartWrite(chain)) << "round " << round;
+
+    // now and then another event drives the stream in the middle of the write
+    if (next(4) == 0)
+    {
+      auto read = std::make_shared<IO::Buffer>(64, '.');
+      if (rig.Tls->StartRead(read))
+      {
+        // nothing is coming from the server: the read just stays pending
+      }
+    }
+
+    rig.Pump();
+
+    Result result;
+    ASSERT_TRUE(rig.Tls->PopPendingResult(result)) << "round " << round;
+    ASSERT_EQ(result.Op, Operation::Write) << "round " << round;
+    ASSERT_EQ(result.Bytes, total) << "round " << round;
+    ASSERT_FALSE(rig.Tls->HasPendingResult());
+
+    ASSERT_EQ(rig.ServerReceived.size(), expected.size()) << "round " << round;
+
+    const auto diagnostics = rig.Tls->GetDiagnostics();
+    ASSERT_FALSE(diagnostics.PlainWritePending) << "round " << round;
+    ASSERT_EQ(diagnostics.LowerWriteBytes, 0u) << "round " << round;
+  }
+
+  EXPECT_TRUE(rig.ServerReceived == expected);
+
+  for (const auto& write : rig.Lower->Writes)
+  {
+    EXPECT_LE(write.Bytes.size(), BiggestChunk);
+  }
+}
+
+TEST(async_tls_stream_batching, writes_one_after_another_each_see_a_clean_start)
+{
+  Rig rig;
+  Established(rig);
+
+  std::string expected;
+  for (int i = 0; i < 5; ++i)
+  {
+    // sizes on both sides of a batch
+    const size_t size = (i % 2 == 0) ? 90 * 1024 + size_t(i) : 3 * 1024;
+    const std::string piece = Pattern(size, size_t(i) * 77);
+    expected += piece;
+
+    BufferChain chain;
+    ASSERT_TRUE(chain.Add(BufferOf(piece)));
+    ASSERT_TRUE(rig.Tls->StartWrite(chain));
+    rig.Pump();
+
+    Result result;
+    ASSERT_TRUE(rig.Tls->PopPendingResult(result)) << "write " << i;
+    EXPECT_EQ(result.Op, Operation::Write);
+    EXPECT_EQ(result.Bytes, size);
+    EXPECT_FALSE(rig.Tls->HasPendingResult());
+  }
+
+  EXPECT_TRUE(rig.ServerReceived == expected);
 }

@@ -21,6 +21,21 @@ namespace
   constexpr size_t ENCRYPTED_READ_SIZE = IO::BUFFER_SIZE;
   constexpr size_t ENCRYPTED_CHUNK_SIZE = IO::BUFFER_SIZE;
 
+  // DrivePlainWrite() keeps encrypting TLS records (one per SSL_write, 16 KB
+  // of plaintext at most) while the ciphertext that has not been written to
+  // the lower stream yet is below this: the more records go to the lower
+  // writer in one chunk, the fewer lower writes, completions and trips
+  // through the owner's loop a large write takes. It is also the bound on that
+  // ciphertext per stream, so the memory it costs is a stream's, not a
+  // write's: the limit plus at most one record. Kept under
+  // ENCRYPTED_CHUNK_SIZE so that a batch is one buffer.
+  constexpr size_t TLS_WRITE_BATCH_LIMIT = 64 * 1024;
+
+  static_assert(
+    TLS_WRITE_BATCH_LIMIT + 32 * 1024 <= ENCRYPTED_CHUNK_SIZE
+    , "a batch (the limit and one more record) must fit one encrypted chunk"
+  );
+
   bool IsSslWantIO(int error)
   {
     return error == SSL_ERROR_WANT_READ || error == SSL_ERROR_WANT_WRITE;
@@ -729,6 +744,11 @@ bool AsyncTlsStream::DrivePlainWrite()
     return QueueResult(Operation::Write, nullptr, total, 0);
   }
 
+  // SSL_MODE_ENABLE_PARTIAL_WRITE: every SSL_write makes one record. Records
+  // are made one after another until the plaintext is used up or enough
+  // ciphertext is waiting (TLS_WRITE_BATCH_LIMIT), and then handed to the lower
+  // writer together, as one chunk. What is left of the plaintext goes on with
+  // the next Drive(), which the completion of that lower write brings.
   size_t skip = PlainWriteOffset;
 
   for (const auto& view : PlainWriteBuffers.GetViews())
@@ -741,32 +761,38 @@ bool AsyncTlsStream::DrivePlainWrite()
 
     const char* data = view.Buffer->data() + view.Offset + skip;
     size_t size = view.Size - skip;
+    skip = 0;
 
-    ERR_clear_error();
-    int rc = SSL_write(Ssl, data, int(size));
-    if (rc > 0)
+    while (size > 0)
     {
-      PlainWriteNeedsRead = false;
-      PlainWriteOffset += size_t(rc);
-      if (!DrainEncryptedOutput())
-        return false;
+      if (UnwrittenCiphertext() >= TLS_WRITE_BATCH_LIMIT)
+        return DrainEncryptedOutput();
 
-      if (size_t(rc) < size)
-        return true;
+      ERR_clear_error();
+      int rc = SSL_write(Ssl, data, int(size));
+      if (rc > 0)
+      {
+        PlainWriteNeedsRead = false;
+        PlainWriteOffset += size_t(rc);
+        data += rc;
+        size -= size_t(rc);
+        continue;
+      }
 
-      skip = 0;
-      continue;
+      int error = GetSslError(rc);
+      PlainWriteNeedsRead = error == SSL_ERROR_WANT_READ;
+      if (IsWantIO(error))
+        return DrainEncryptedOutput();
+
+      SetSslError("SSL_write", rc, error);
+      ResetPlainWrite();
+      return QueueError(ConvertSslError(error));
     }
-
-    int error = GetSslError(rc);
-    PlainWriteNeedsRead = error == SSL_ERROR_WANT_READ;
-    if (IsWantIO(error))
-      return DrainEncryptedOutput();
-
-    SetSslError("SSL_write", rc, error);
-    ResetPlainWrite();
-    return QueueError(ConvertSslError(error));
   }
+
+  // all of the plaintext is encrypted: the rest of the ciphertext goes down
+  if (!DrainEncryptedOutput())
+    return false;
 
   if (PlainWriteOffset >= PlainWriteSize && LowerWriter.IsIdle())
   {
@@ -776,6 +802,17 @@ bool AsyncTlsStream::DrivePlainWrite()
   }
 
   return true;
+}
+
+size_t AsyncTlsStream::UnwrittenCiphertext() const
+{
+  size_t pending = LowerWriter.Size();
+
+  BIO* wbio = Ssl != nullptr ? SSL_get_wbio(Ssl) : nullptr;
+  if (wbio != nullptr)
+    pending += size_t(BIO_ctrl_pending(wbio));
+
+  return pending;
 }
 
 bool AsyncTlsStream::DriveShutdown()
@@ -951,6 +988,8 @@ bool AsyncTlsStream::CompleteLowerWrite(size_t bytes)
     return false;
   }
 
+  // A buffer holds a whole batch (up to TLS_WRITE_BATCH_LIMIT plus a record),
+  // and at most a chunk or two is in flight at a time: this list stays short.
   constexpr size_t MAX_FREE_ENCRYPTED_BUFFERS = 4;
   for (auto& view : completed.GetViews())
   {
