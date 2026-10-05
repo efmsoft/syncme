@@ -415,7 +415,7 @@ bool AsyncTlsStream::PopPendingResult(Result& result)
     return false;
   }
 
-  result = PendingResults.front();
+  result = std::move(PendingResults.front());
   PendingResults.pop_front();
 
   // Re-arm the ready notification once the owner has drained everything, so a
@@ -581,7 +581,7 @@ bool AsyncTlsStream::DeliverAdoptedPlaintext()
   PlainReadBuffer.reset();
   PlainReadPending = false;
 
-  return QueueResult(Operation::Read, buffer, size, 0);
+  return QueueResult(Operation::Read, std::move(buffer), size, 0);
 }
 
 bool AsyncTlsStream::Drive()
@@ -693,7 +693,7 @@ bool AsyncTlsStream::DrivePlainRead()
     buffer->resize(size_t(rc));
     PlainReadBuffer.reset();
     PlainReadPending = false;
-    return QueueResult(Operation::Read, buffer, size_t(rc), 0);
+    return QueueResult(Operation::Read, std::move(buffer), size_t(rc), 0);
   }
 
   int error = GetSslError(rc);
@@ -849,7 +849,7 @@ bool AsyncTlsStream::DrainEncryptedOutput()
 
     buffer->resize(size_t(rc));
 
-    if (!LowerWriter.Push(buffer))
+    if (!LowerWriter.Push(std::move(buffer)))
     {
       LastError = "failed to start encrypted lower write";
       return false;
@@ -1002,11 +1002,11 @@ bool AsyncTlsStream::QueueResult(
   result.Stream = shared_from_this();
   result.Context = Context;
   result.Op = op;
-  result.Buffer = buffer;
+  result.Buffer = std::move(buffer);
   result.Bytes = bytes;
   result.Error = error;
 
-  PendingResults.push_back(result);
+  PendingResults.push_back(std::move(result));
   NotifyResultReady();
   return true;
 }

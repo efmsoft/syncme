@@ -395,7 +395,7 @@ namespace
       if (PendingResults.empty())
         return false;
 
-      result = PendingResults.front();
+      result = std::move(PendingResults.front());
       PendingResults.pop_front();
       return true;
     }
@@ -415,10 +415,10 @@ namespace
       result.Stream = stream;
       result.Context = stream->Context;
       result.Op = op;
-      result.Buffer = buffer;
+      result.Buffer = std::move(buffer);
       result.Bytes = bytes;
       result.Error = error;
-      PendingResults.push_back(result);
+      PendingResults.push_back(std::move(result));
     }
 
     void ProcessEpollEvent(const epoll_event& ev)
@@ -432,7 +432,7 @@ namespace
         result.Op = Stopping.load() ? Operation::Stop : Operation::Wake;
 
         std::lock_guard<std::mutex> guard(Lock);
-        PendingResults.push_back(result);
+        PendingResults.push_back(std::move(result));
         return;
       }
 

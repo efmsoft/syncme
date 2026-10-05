@@ -27,6 +27,11 @@ namespace Syncme
         SINCMELNK void Detach();
 
         SINCMELNK bool Push(const BufferChain& buffers);
+
+        // The chain is taken over, not copied: it is empty afterwards. The
+        // views (and the buffers they hold) reach the stream, and then
+        // OnWriteCompleted()'s `completed`, as the same objects.
+        SINCMELNK bool Push(BufferChain&& buffers);
         SINCMELNK bool Push(IO::BufferPtr buffer);
 
         // completed, if non-null, receives the chain that just finished

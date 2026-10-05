@@ -31,7 +31,8 @@ bool BufferChain::Add(Syncme::Sockets::IO::BufferPtr buffer)
   if (buffer == nullptr)
     return false;
 
-  return Add(buffer, 0, buffer->size());
+  const size_t size = buffer->size();
+  return Add(std::move(buffer), 0, size);
 }
 
 void BufferChain::Clear()

@@ -45,6 +45,33 @@ namespace Syncme
       public:
         SINCMELNK BufferChain();
 
+        BufferChain(const BufferChain& other) = default;
+        BufferChain& operator=(const BufferChain& other) = default;
+
+        // A moved-from chain is an empty one (the implicit move would have
+        // left TotalSize behind, describing views it no longer has).
+        BufferChain(BufferChain&& other) noexcept
+          : Views(std::move(other.Views))
+          , TotalSize(other.TotalSize)
+        {
+          other.Views.clear();
+          other.TotalSize = 0;
+        }
+
+        BufferChain& operator=(BufferChain&& other) noexcept
+        {
+          if (this != &other)
+          {
+            Views = std::move(other.Views);
+            TotalSize = other.TotalSize;
+
+            other.Views.clear();
+            other.TotalSize = 0;
+          }
+
+          return *this;
+        }
+
         SINCMELNK bool Add(
           IO::BufferPtr buffer
           , size_t offset

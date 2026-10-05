@@ -27,8 +27,18 @@ bool AsyncWriteQueue::Push(const BufferChain& buffers)
   if (buffers.IsEmpty())
     return true;
 
-  Queue.push_back(buffers);
-  QueuedBytes += buffers.Size();
+  return Push(BufferChain(buffers));
+}
+
+bool AsyncWriteQueue::Push(BufferChain&& buffers)
+{
+  if (buffers.IsEmpty())
+    return true;
+
+  const size_t size = buffers.Size();
+
+  Queue.push_back(std::move(buffers));
+  QueuedBytes += size;
 
   return StartNext();
 }
@@ -36,10 +46,10 @@ bool AsyncWriteQueue::Push(const BufferChain& buffers)
 bool AsyncWriteQueue::Push(IO::BufferPtr buffer)
 {
   BufferChain chain;
-  if (!chain.Add(buffer))
+  if (!chain.Add(std::move(buffer)))
     return false;
 
-  return Push(chain);
+  return Push(std::move(chain));
 }
 
 bool AsyncWriteQueue::OnWriteCompleted(size_t bytes, BufferChain* completed)
