@@ -261,6 +261,12 @@ namespace
       return true;
     }
 
+    bool TryPopPendingResult(Result& result) override
+    {
+      result = Result();
+      return PopPendingResult(result);
+    }
+
     bool Wait(Result& result, int timeout) override
     {
       result = Result();

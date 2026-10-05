@@ -82,6 +82,16 @@ namespace Syncme
 
         SINCMELNK virtual bool Remove(AsyncStream* stream) = 0;
         SINCMELNK virtual bool Wait(Result& result, int timeout) = 0;
+
+        // A result the engine already holds, the very one Wait() would hand
+        // out before it looked at the system at all; false, with `result`
+        // empty, when there is none. It never waits and never makes a system
+        // call, so a caller that has just dealt with one result can take the
+        // ones queued behind it without going round its own loop for each.
+        // An engine that keeps no queue of its own has nothing to give: the
+        // default.
+        SINCMELNK virtual bool TryPopPendingResult(Result& result);
+
         SINCMELNK virtual void Wake() = 0;
         SINCMELNK virtual void Stop() = 0;
       };

@@ -17,3 +17,9 @@ AsyncStream::~AsyncStream()
 AsyncEngine::~AsyncEngine()
 {
 }
+
+bool AsyncEngine::TryPopPendingResult(Result& result)
+{
+  result = Result();
+  return false;
+}
