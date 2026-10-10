@@ -1,14 +1,58 @@
 #include <utility>
 
 #include <Syncme/Sockets/Async/AsyncWriteQueue.h>
+#include <Syncme/Sockets/Async/Counter.h>
 
 using namespace Syncme::Sockets::Async;
 namespace IO = Syncme::Sockets::IO;
+
+namespace
+{
+  void UpdatePeak(
+    std::atomic<uint64_t>& peak
+    , uint64_t value
+  )
+  {
+    uint64_t current = peak.load(std::memory_order_relaxed);
+    while (current < value
+      && !peak.compare_exchange_weak(
+        current
+        , value
+        , std::memory_order_relaxed
+      ))
+    {
+    }
+  }
+
+  void AddWriteQueueBytes(size_t bytes)
+  {
+    if (bytes == 0)
+      return;
+
+    uint64_t value = AsyncWriteQueueBytes.fetch_add(
+      uint64_t(bytes)
+      , std::memory_order_relaxed
+    ) + uint64_t(bytes);
+
+    UpdatePeak(AsyncWriteQueueBytesPeak, value);
+  }
+
+  void RemoveWriteQueueBytes(size_t bytes)
+  {
+    if (bytes != 0)
+      AsyncWriteQueueBytes.fetch_sub(uint64_t(bytes), std::memory_order_relaxed);
+  }
+}
 
 AsyncWriteQueue::AsyncWriteQueue()
   : QueuedBytes(0)
   , WritePending(false)
 {
+}
+
+AsyncWriteQueue::~AsyncWriteQueue()
+{
+  Clear();
 }
 
 void AsyncWriteQueue::Attach(AsyncStreamPtr stream)
@@ -39,6 +83,7 @@ bool AsyncWriteQueue::Push(BufferChain&& buffers)
 
   Queue.push_back(std::move(buffers));
   QueuedBytes += size;
+  AddWriteQueueBytes(size);
 
   return StartNext();
 }
@@ -66,6 +111,7 @@ bool AsyncWriteQueue::OnWriteCompleted(size_t bytes, BufferChain* completed)
 
   Queue.pop_front();
   QueuedBytes -= size;
+  RemoveWriteQueueBytes(size);
   WritePending = false;
 
   return StartNext();
@@ -73,6 +119,7 @@ bool AsyncWriteQueue::OnWriteCompleted(size_t bytes, BufferChain* completed)
 
 void AsyncWriteQueue::Clear()
 {
+  RemoveWriteQueueBytes(QueuedBytes);
   Queue.clear();
   QueuedBytes = 0;
   WritePending = false;

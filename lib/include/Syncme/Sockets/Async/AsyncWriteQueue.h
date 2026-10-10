@@ -22,6 +22,7 @@ namespace Syncme
 
       public:
         SINCMELNK AsyncWriteQueue();
+        SINCMELNK ~AsyncWriteQueue();
 
         SINCMELNK void Attach(AsyncStreamPtr stream);
         SINCMELNK void Detach();

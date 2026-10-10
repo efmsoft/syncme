@@ -187,8 +187,6 @@ namespace Syncme
     uint32_t EpollMask;
 #endif
 
-    char RxBuffer[Sockets::IO::BUFFER_SIZE];
-
     enum WaitOrder
     {
       evSocket,
@@ -316,6 +314,10 @@ namespace Syncme
       , const IOCountersGroup& g
       , const char* title
     );
+
+  private:
+    // Legacy ReadIO owns this scratch buffer; async streams use their own buffers.
+    std::unique_ptr<char[]> RxBuffer;
   };
 
   typedef std::shared_ptr<Socket> SocketPtr;

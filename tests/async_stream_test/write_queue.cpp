@@ -7,6 +7,7 @@
 
 #include <Syncme/Sockets/Async/AsyncWriteQueue.h>
 #include <Syncme/Sockets/Async/BufferChain.h>
+#include <Syncme/Sockets/Async/Counter.h>
 
 #include "fake_stream.h"
 
@@ -356,4 +357,49 @@ TEST(async_write_queue, clear_forgets_what_is_queued)
   EXPECT_EQ(queue.Size(), 0u);
   EXPECT_EQ(queue.Count(), 0u);
   EXPECT_TRUE(weak.expired());
+}
+
+TEST(async_write_queue, byte_counter_tracks_queued_data_and_peak)
+{
+  auto stream = std::make_shared<AsyncTest::FakeStream>();
+  AsyncWriteQueue queue;
+  queue.Attach(stream);
+
+  const uint64_t before = GetAsyncWriteQueueBytes();
+  const uint64_t peakBefore = GetAsyncWriteQueueBytesPeak();
+
+  ASSERT_TRUE(queue.Push(ChainOf({ Make(100, 'a') })));
+  ASSERT_TRUE(queue.Push(ChainOf({ Make(50, 'b') })));
+
+  EXPECT_EQ(GetAsyncWriteQueueBytes(), before + 150);
+  EXPECT_GE(GetAsyncWriteQueueBytesPeak(), before + 150);
+  EXPECT_GE(GetAsyncWriteQueueBytesPeak(), peakBefore);
+
+  ASSERT_TRUE(queue.OnWriteCompleted(100));
+  EXPECT_EQ(GetAsyncWriteQueueBytes(), before + 50);
+
+  queue.Clear();
+  EXPECT_EQ(GetAsyncWriteQueueBytes(), before);
+}
+
+TEST(async_buffer_counter, capacity_counter_tracks_live_io_buffers)
+{
+  const uint64_t before = GetAsyncIoBufferCapacityBytes();
+  const uint64_t peakBefore = GetAsyncIoBufferCapacityBytesPeak();
+
+  size_t capacity = 0;
+  {
+    auto buffer = std::make_shared<IO::Buffer>();
+    buffer->resize(100 * 1024);
+    capacity = buffer->capacity();
+
+    EXPECT_EQ(GetAsyncIoBufferCapacityBytes(), before + capacity);
+    EXPECT_GE(GetAsyncIoBufferCapacityBytesPeak(), before + capacity);
+    EXPECT_GE(GetAsyncIoBufferCapacityBytesPeak(), peakBefore);
+
+    buffer->resize(1024);
+    EXPECT_EQ(GetAsyncIoBufferCapacityBytes(), before + capacity);
+  }
+
+  EXPECT_EQ(GetAsyncIoBufferCapacityBytes(), before);
 }

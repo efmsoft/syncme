@@ -1,4 +1,5 @@
 #include <cassert>
+#include <new>
 #include <string.h>
 
 #include <Syncme/Sockets/SocketPair.h>
@@ -152,6 +153,7 @@ bool Socket::WriteIO(IOStat& stat)
 bool Socket::ReadIO(IOStat& stat)
 {
   TimePoint t0;
+  char* rxBuffer = RxBuffer.get();
   
   for (;;)
   {
@@ -167,7 +169,20 @@ bool Socket::ReadIO(IOStat& stat)
         readSize = available;
     }
 
-    int n = InternalRead(RxBuffer, readSize, 0);
+    if (rxBuffer == nullptr)
+    {
+      // Keep the buffer stable for later reads, including SSL WANT_READ retries.
+      RxBuffer.reset(new (std::nothrow) char[Sockets::IO::BUFFER_SIZE]);
+      rxBuffer = RxBuffer.get();
+      if (rxBuffer == nullptr)
+      {
+        SKT_SET_LAST_ERROR(GENERIC);
+        stat.RcvTime += t0.ElapsedSince();
+        return false;
+      }
+    }
+
+    int n = InternalRead(rxBuffer, readSize, 0);
     IODEBUG("rx", n);
 
     if (n > 0)
@@ -176,7 +191,7 @@ bool Socket::ReadIO(IOStat& stat)
       stat.RcvPkt++;
 
       size_t qsize = 0;
-      RxQueue.Append(RxBuffer, n, &qsize);
+      RxQueue.Append(rxBuffer, n, &qsize);
 
       continue;
     }

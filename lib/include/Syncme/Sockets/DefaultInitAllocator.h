@@ -4,6 +4,8 @@
 #include <type_traits>
 #include <utility>
 
+#include <Syncme/Sockets/Async/Counter.h>
+
 namespace Syncme
 {
   namespace Sockets
@@ -34,6 +36,19 @@ namespace Syncme
       template <class U>
       DefaultInitAllocator(const DefaultInitAllocator<U>&) noexcept
       {
+      }
+
+      T* allocate(size_t n)
+      {
+        T* p = Base::allocate(n);
+        Async::TrackAsyncIoBufferAllocation(n * sizeof(T));
+        return p;
+      }
+
+      void deallocate(T* p, size_t n) noexcept
+      {
+        Async::TrackAsyncIoBufferDeallocation(n * sizeof(T));
+        Base::deallocate(p, n);
       }
 
       template <class U>

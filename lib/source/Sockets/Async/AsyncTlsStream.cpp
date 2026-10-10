@@ -9,6 +9,7 @@
 
 #include <Syncme/Logger/Log.h>
 #include <Syncme/Sockets/Async/AsyncTlsStream.h>
+#include <Syncme/Sockets/Async/Counter.h>
 #include <Syncme/Sockets/SSLHelpers.h>
 #include <Syncme/Sockets/Socket.h>
 
@@ -51,6 +52,107 @@ namespace
 
     return error;
   }
+
+  void UpdatePeak(
+    std::atomic<uint64_t>& peak
+    , uint64_t value
+  )
+  {
+    uint64_t current = peak.load(std::memory_order_relaxed);
+    while (current < value
+      && !peak.compare_exchange_weak(
+        current
+        , value
+        , std::memory_order_relaxed
+      ))
+    {
+    }
+  }
+
+  size_t BufferCapacity(const IO::BufferPtr& buffer)
+  {
+    return buffer != nullptr ? buffer->capacity() : 0;
+  }
+
+  void AddTlsPendingResultBytes(size_t bytes)
+  {
+    if (bytes == 0)
+      return;
+
+    uint64_t value = AsyncTlsPendingResultBytes.fetch_add(
+      uint64_t(bytes)
+      , std::memory_order_relaxed
+    ) + uint64_t(bytes);
+
+    UpdatePeak(AsyncTlsPendingResultBytesPeak, value);
+  }
+
+  void RemoveTlsPendingResultBytes(size_t bytes)
+  {
+    if (bytes != 0)
+      AsyncTlsPendingResultBytes.fetch_sub(uint64_t(bytes), std::memory_order_relaxed);
+  }
+
+  void AddTlsFreeBufferCapacity(size_t bytes)
+  {
+    if (bytes == 0)
+      return;
+
+    uint64_t value = AsyncTlsFreeBufferCapacityBytes.fetch_add(
+      uint64_t(bytes)
+      , std::memory_order_relaxed
+    ) + uint64_t(bytes);
+
+    UpdatePeak(AsyncTlsFreeBufferCapacityBytesPeak, value);
+  }
+
+  void RemoveTlsFreeBufferCapacity(size_t bytes)
+  {
+    if (bytes != 0)
+      AsyncTlsFreeBufferCapacityBytes.fetch_sub(uint64_t(bytes), std::memory_order_relaxed);
+  }
+
+  void AddTlsLowerReadBufferCapacity(size_t bytes)
+  {
+    if (bytes == 0)
+      return;
+
+    uint64_t value = AsyncTlsLowerReadBufferCapacityBytes.fetch_add(
+      uint64_t(bytes)
+      , std::memory_order_relaxed
+    ) + uint64_t(bytes);
+
+    UpdatePeak(AsyncTlsLowerReadBufferCapacityBytesPeak, value);
+  }
+
+  void RemoveTlsLowerReadBufferCapacity(size_t bytes)
+  {
+    if (bytes != 0)
+    {
+      AsyncTlsLowerReadBufferCapacityBytes.fetch_sub(
+        uint64_t(bytes)
+        , std::memory_order_relaxed
+      );
+    }
+  }
+
+  size_t PendingResultCapacity(const std::deque<Result>& results)
+  {
+    size_t total = 0;
+    for (const auto& result : results)
+      total += BufferCapacity(result.Buffer);
+
+    return total;
+  }
+
+  size_t BufferListCapacity(const IO::BufferList& buffers)
+  {
+    size_t total = 0;
+    for (const auto& buffer : buffers)
+      total += BufferCapacity(buffer);
+
+    return total;
+  }
 }
 
 AsyncTlsStream::AsyncTlsStream(
@@ -81,6 +183,8 @@ AsyncTlsStream::AsyncTlsStream(
   , PlainWritePending(false)
   , PlainWriteNeedsRead(false)
 {
+  AsyncTlsStreams.fetch_add(1, std::memory_order_relaxed);
+
   if (Context == nullptr && LowerStream != nullptr)
     Context = LowerStream->GetContext();
 
@@ -108,11 +212,17 @@ AsyncTlsStream::~AsyncTlsStream()
 {
   Close();
 
+  RemoveTlsLowerReadBufferCapacity(BufferCapacity(LowerReadBuffer));
+  RemoveTlsFreeBufferCapacity(BufferListCapacity(FreeEncryptedWriteBuffers));
+  FreeEncryptedWriteBuffers.clear();
+
   if (OwnSsl && Ssl != nullptr)
   {
     SSL_free(Ssl);
     Ssl = nullptr;
   }
+
+  AsyncTlsStreams.fetch_sub(1, std::memory_order_relaxed);
 }
 
 Socket* AsyncTlsStream::GetSocket() const
@@ -180,6 +290,7 @@ void AsyncTlsStream::Close()
 
   Removing = true;
   ShutdownPending = false;
+  RemoveTlsPendingResultBytes(PendingResultCapacity(PendingResults));
   PendingResults.clear();
   ResultNotified = false;
   ResultSink = nullptr;
@@ -430,6 +541,7 @@ bool AsyncTlsStream::PopPendingResult(Result& result)
     return false;
   }
 
+  RemoveTlsPendingResultBytes(BufferCapacity(PendingResults.front().Buffer));
   result = std::move(PendingResults.front());
   PendingResults.pop_front();
 
@@ -859,6 +971,7 @@ bool AsyncTlsStream::DrainEncryptedOutput()
     if (!FreeEncryptedWriteBuffers.empty())
     {
       buffer = FreeEncryptedWriteBuffers.front();
+      RemoveTlsFreeBufferCapacity(BufferCapacity(buffer));
       FreeEncryptedWriteBuffers.pop_front();
     }
     else
@@ -920,7 +1033,11 @@ bool AsyncTlsStream::StartLowerRead()
     }
   }
 
+  const size_t oldCapacity = LowerReadBuffer->capacity();
   LowerReadBuffer->resize(ENCRYPTED_READ_SIZE);
+  const size_t newCapacity = LowerReadBuffer->capacity();
+  if (newCapacity > oldCapacity)
+    AddTlsLowerReadBufferCapacity(newCapacity - oldCapacity);
 
   if (!LowerStream->StartRead(LowerReadBuffer))
   {
@@ -1000,6 +1117,7 @@ bool AsyncTlsStream::CompleteLowerWrite(size_t bytes)
       break;
 
     FreeEncryptedWriteBuffers.push_back(view.Buffer);
+    AddTlsFreeBufferCapacity(BufferCapacity(view.Buffer));
   }
 
   return CompleteLowerShutdown();
@@ -1045,7 +1163,9 @@ bool AsyncTlsStream::QueueResult(
   result.Bytes = bytes;
   result.Error = error;
 
+  const size_t retained = BufferCapacity(result.Buffer);
   PendingResults.push_back(std::move(result));
+  AddTlsPendingResultBytes(retained);
   NotifyResultReady();
   return true;
 }

@@ -20,6 +20,7 @@
 #include <openssl/x509.h>
 
 #include <Syncme/Sockets/Async/AsyncTlsStream.h>
+#include <Syncme/Sockets/Async/Counter.h>
 
 #include "fake_stream.h"
 
@@ -920,4 +921,17 @@ TEST(async_tls_stream_batching, writes_one_after_another_each_see_a_clean_start)
   }
 
   EXPECT_TRUE(rig.ServerReceived == expected);
+}
+
+TEST(async_tls_stream, stream_counter_tracks_lifetime)
+{
+  const uint64_t before = GetAsyncTlsStreams();
+
+  {
+    auto lower = std::make_shared<AsyncTest::FakeStream>();
+    auto tls = std::make_shared<AsyncTlsStream>(lower, nullptr, false, nullptr);
+    EXPECT_EQ(GetAsyncTlsStreams(), before + 1);
+  }
+
+  EXPECT_EQ(GetAsyncTlsStreams(), before);
 }

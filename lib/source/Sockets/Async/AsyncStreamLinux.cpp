@@ -19,6 +19,7 @@
 #include <Syncme/Logger/Log.h>
 #include <Syncme/Sockets/API.h>
 #include <Syncme/Sockets/Async/AsyncStream.h>
+#include <Syncme/Sockets/Async/Counter.h>
 #include <Syncme/Sockets/Socket.h>
 
 using namespace Syncme;
@@ -28,6 +29,63 @@ namespace IO = Syncme::Sockets::IO;
 namespace
 {
   constexpr size_t MAX_IOV = 16;
+
+  void UpdatePeak(
+    std::atomic<uint64_t>& peak
+    , uint64_t value
+  )
+  {
+    uint64_t current = peak.load(std::memory_order_relaxed);
+    while (current < value
+      && !peak.compare_exchange_weak(
+        current
+        , value
+        , std::memory_order_relaxed
+      ))
+    {
+    }
+  }
+
+  size_t BufferCapacity(const IO::BufferPtr& buffer)
+  {
+    return buffer != nullptr ? buffer->capacity() : 0;
+  }
+
+  size_t BufferChainCapacity(const BufferChain& buffers)
+  {
+    size_t total = 0;
+    for (const auto& view : buffers.GetViews())
+    {
+      if (view.Buffer != nullptr)
+        total += view.Buffer->capacity();
+    }
+    return total;
+  }
+
+  void AddCapacity(
+    std::atomic<uint64_t>& current
+    , std::atomic<uint64_t>& peak
+    , size_t bytes
+  )
+  {
+    if (bytes == 0)
+      return;
+
+    uint64_t value = current.fetch_add(
+      uint64_t(bytes)
+      , std::memory_order_relaxed
+    ) + uint64_t(bytes);
+    UpdatePeak(peak, value);
+  }
+
+  void RemoveCapacity(
+    std::atomic<uint64_t>& current
+    , size_t bytes
+  )
+  {
+    if (bytes != 0)
+      current.fetch_sub(uint64_t(bytes), std::memory_order_relaxed);
+  }
 
   class LinuxAsyncEngine;
 
@@ -65,6 +123,18 @@ namespace
       , WriteOffset(0)
       , WriteSize(0)
     {
+    }
+
+    ~LinuxAsyncStream() override
+    {
+      RemoveCapacity(
+        AsyncReadBufferCapacityBytes
+        , BufferCapacity(ReadBuffer)
+      );
+      RemoveCapacity(
+        AsyncWriteBufferCapacityBytes
+        , BufferChainCapacity(WriteBuffers)
+      );
     }
 
     Socket* GetSocket() const override
@@ -139,6 +209,11 @@ namespace
 
     ~LinuxAsyncEngine() override
     {
+      {
+        std::lock_guard<std::mutex> guard(Lock);
+        ClearPendingResultsLocked();
+      }
+
       if (StopEvent != -1 && Poll != -1)
         epoll_ctl(Poll, EPOLL_CTL_DEL, StopEvent, nullptr);
 
@@ -330,6 +405,11 @@ namespace
         return false;
 
       stream->ReadBuffer = buffer;
+      AddCapacity(
+        AsyncReadBufferCapacityBytes
+        , AsyncReadBufferCapacityBytesPeak
+        , BufferCapacity(stream->ReadBuffer)
+      );
       stream->ReadPending = true;
 
       bool ok = TryReadLocked(stream);
@@ -353,6 +433,11 @@ namespace
         return false;
 
       stream->WriteBuffers = buffers;
+      AddCapacity(
+        AsyncWriteBufferCapacityBytes
+        , AsyncWriteBufferCapacityBytesPeak
+        , BufferChainCapacity(stream->WriteBuffers)
+      );
       stream->WriteOffset = 0;
       stream->WriteSize = buffers.Size();
       stream->WritePending = true;
@@ -401,9 +486,66 @@ namespace
       if (PendingResults.empty())
         return false;
 
+      const size_t retained = BufferCapacity(PendingResults.front().Buffer);
       result = std::move(PendingResults.front());
       PendingResults.pop_front();
+
+      AsyncEnginePendingResultCount.fetch_sub(1, std::memory_order_relaxed);
+      if (retained != 0)
+      {
+        AsyncEnginePendingResultBytes.fetch_sub(
+          uint64_t(retained)
+          , std::memory_order_relaxed
+        );
+      }
+
       return true;
+    }
+
+    void PushPendingResultLocked(Result&& result)
+    {
+      const size_t retained = BufferCapacity(result.Buffer);
+      PendingResults.push_back(std::move(result));
+
+      uint64_t count = AsyncEnginePendingResultCount.fetch_add(
+        1
+        , std::memory_order_relaxed
+      ) + 1;
+      UpdatePeak(AsyncEnginePendingResultCountPeak, count);
+
+      if (retained != 0)
+      {
+        uint64_t bytes = AsyncEnginePendingResultBytes.fetch_add(
+          uint64_t(retained)
+          , std::memory_order_relaxed
+        ) + uint64_t(retained);
+        UpdatePeak(AsyncEnginePendingResultBytesPeak, bytes);
+      }
+    }
+
+    void ClearPendingResultsLocked()
+    {
+      if (PendingResults.empty())
+        return;
+
+      size_t retained = 0;
+      for (const auto& result : PendingResults)
+        retained += BufferCapacity(result.Buffer);
+
+      AsyncEnginePendingResultCount.fetch_sub(
+        uint64_t(PendingResults.size())
+        , std::memory_order_relaxed
+      );
+
+      if (retained != 0)
+      {
+        AsyncEnginePendingResultBytes.fetch_sub(
+          uint64_t(retained)
+          , std::memory_order_relaxed
+        );
+      }
+
+      PendingResults.clear();
     }
 
     void QueueResultLocked(
@@ -424,7 +566,7 @@ namespace
       result.Buffer = std::move(buffer);
       result.Bytes = bytes;
       result.Error = error;
-      PendingResults.push_back(std::move(result));
+      PushPendingResultLocked(std::move(result));
     }
 
     void ProcessEpollEvent(const epoll_event& ev)
@@ -438,7 +580,7 @@ namespace
         result.Op = Stopping.load() ? Operation::Stop : Operation::Wake;
 
         std::lock_guard<std::mutex> guard(Lock);
-        PendingResults.push_back(std::move(result));
+        PushPendingResultLocked(std::move(result));
         return;
       }
 
@@ -525,6 +667,10 @@ namespace
         buffer->resize(size_t(n));
 
         stream->ReadPending = false;
+        RemoveCapacity(
+          AsyncReadBufferCapacityBytes
+          , BufferCapacity(stream->ReadBuffer)
+        );
         stream->ReadBuffer.reset();
 
         QueueResultLocked(owner, Operation::Read, buffer, size_t(n), 0);
@@ -535,6 +681,10 @@ namespace
       {
         stream->ReadPending = false;
         stream->ReadClosed = true;
+        RemoveCapacity(
+          AsyncReadBufferCapacityBytes
+          , BufferCapacity(stream->ReadBuffer)
+        );
         stream->ReadBuffer.reset();
         stream->Skt->Peer.Disconnected = true;
 
@@ -546,6 +696,10 @@ namespace
         return true;
 
       stream->ReadPending = false;
+      RemoveCapacity(
+        AsyncReadBufferCapacityBytes
+        , BufferCapacity(stream->ReadBuffer)
+      );
       stream->ReadBuffer.reset();
       QueueResultLocked(owner, Operation::Error, nullptr, 0, errno);
       return true;
@@ -597,6 +751,10 @@ namespace
 
         int error = n == 0 ? EPIPE : errno;
         stream->WritePending = false;
+        RemoveCapacity(
+          AsyncWriteBufferCapacityBytes
+          , BufferChainCapacity(stream->WriteBuffers)
+        );
         stream->WriteBuffers.Clear();
         stream->WriteOffset = 0;
         stream->WriteSize = 0;
@@ -641,6 +799,10 @@ namespace
       size_t bytes = stream->WriteSize;
 
       stream->WritePending = false;
+      RemoveCapacity(
+        AsyncWriteBufferCapacityBytes
+        , BufferChainCapacity(stream->WriteBuffers)
+      );
       stream->WriteBuffers.Clear();
       stream->WriteOffset = 0;
       stream->WriteSize = 0;
@@ -692,8 +854,16 @@ namespace
         return false;
 
       stream->ReadPending = false;
+      RemoveCapacity(
+        AsyncReadBufferCapacityBytes
+        , BufferCapacity(stream->ReadBuffer)
+      );
       stream->ReadBuffer.reset();
       stream->WritePending = false;
+      RemoveCapacity(
+        AsyncWriteBufferCapacityBytes
+        , BufferChainCapacity(stream->WriteBuffers)
+      );
       stream->WriteBuffers.Clear();
       stream->WriteOffset = 0;
       stream->WriteSize = 0;
