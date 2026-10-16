@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
+#include <climits>
 #include <cerrno>
 #include <cstring>
 #include <deque>
@@ -349,9 +351,29 @@ namespace
       if (PopPendingResult(result))
         return true;
 
+      using Clock = std::chrono::steady_clock;
+      const auto deadline = timeout >= 0
+        ? Clock::now() + std::chrono::milliseconds(timeout)
+        : Clock::time_point::max();
+      bool firstWait = true;
+
       for (;;)
       {
-        int n = epoll_wait(Poll, Events.data(), int(Events.size()), timeout);
+        int waitTimeout = timeout;
+        if (timeout >= 0 && !firstWait)
+        {
+          const auto now = Clock::now();
+          if (now >= deadline)
+            return true;
+
+          const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+            deadline - now
+          ).count();
+          waitTimeout = remaining >= INT_MAX ? INT_MAX : int(remaining + 1);
+        }
+
+        firstWait = false;
+        int n = epoll_wait(Poll, Events.data(), int(Events.size()), waitTimeout);
         if (n < 0 && errno == EINTR)
           continue;
 

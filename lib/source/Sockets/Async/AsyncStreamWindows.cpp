@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
+#include <climits>
 #include <cstring>
 #include <deque>
 #include <memory>
@@ -408,8 +410,35 @@ namespace
       if (PopPendingResult(result))
         return true;
 
+      using Clock = std::chrono::steady_clock;
+      const auto deadline = timeout >= 0
+        ? Clock::now() + std::chrono::milliseconds(timeout)
+        : Clock::time_point::max();
+      bool firstWait = true;
+
       for (;;)
       {
+        DWORD waitTimeout = INFINITE;
+        if (timeout >= 0)
+        {
+          if (firstWait)
+          {
+            waitTimeout = DWORD(timeout);
+          }
+          else
+          {
+            const auto now = Clock::now();
+            if (now >= deadline)
+              return true;
+
+            const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+              deadline - now
+            ).count();
+            waitTimeout = remaining >= MAXDWORD ? MAXDWORD : DWORD(remaining + 1);
+          }
+        }
+
+        firstWait = false;
         DWORD bytes = 0;
         ULONG_PTR key = 0;
         OVERLAPPED* overlapped = nullptr;
@@ -419,7 +448,7 @@ namespace
           , &bytes
           , &key
           , &overlapped
-          , timeout < 0 ? INFINITE : DWORD(timeout)
+          , waitTimeout
         );
 
         if (overlapped == nullptr)
