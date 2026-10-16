@@ -17,11 +17,21 @@ Queue::~Queue()
 
 void Queue::Stop()
 {
+  ItemList pending;
+
   {
     std::lock_guard<std::mutex> guard(Lock);
     StopRequested = true;
+    pending.swap(Items);
   }
 
+  for (const auto& item : pending)
+  {
+    if (item)
+      item->Cancel();
+  }
+
+  pending.clear();
   Wakeup.notify_one();
 
   if (Worker.joinable())
@@ -42,20 +52,32 @@ ItemPtr Queue::Schedule(TCallback functor, const char* identifier)
 
 ItemPtr Queue::Schedule(ItemPtr item)
 {
-  if (item)
+  if (item == nullptr)
+    return ItemPtr();
+
+  bool needWakeup = false;
+  bool stopped = false;
+
   {
-    bool needWakeup = false;
+    std::lock_guard<std::mutex> guard(Lock);
 
+    stopped = StopRequested;
+    if (!stopped)
     {
-      std::lock_guard<std::mutex> guard(Lock);
-
       needWakeup = Items.empty();
       Items.push_back(item);
     }
-
-    if (needWakeup)
-      Wakeup.notify_one();
   }
+
+  if (stopped)
+  {
+    item->Cancel();
+    return ItemPtr();
+  }
+
+  if (needWakeup)
+    Wakeup.notify_one();
+
   return item;
 }
 

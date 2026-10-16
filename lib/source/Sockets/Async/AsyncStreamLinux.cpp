@@ -352,9 +352,10 @@ namespace
         return true;
 
       using Clock = std::chrono::steady_clock;
-      const auto deadline = timeout >= 0
-        ? Clock::now() + std::chrono::milliseconds(timeout)
-        : Clock::time_point::max();
+      Clock::time_point deadline{};
+      if (timeout >= 0)
+        deadline = Clock::now() + std::chrono::milliseconds(timeout);
+
       bool firstWait = true;
 
       for (;;)

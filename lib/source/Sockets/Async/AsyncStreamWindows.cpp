@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
-#include <climits>
 #include <cstring>
 #include <deque>
 #include <memory>
@@ -411,9 +410,10 @@ namespace
         return true;
 
       using Clock = std::chrono::steady_clock;
-      const auto deadline = timeout >= 0
-        ? Clock::now() + std::chrono::milliseconds(timeout)
-        : Clock::time_point::max();
+      Clock::time_point deadline{};
+      if (timeout >= 0)
+        deadline = Clock::now() + std::chrono::milliseconds(timeout);
+
       bool firstWait = true;
 
       for (;;)
@@ -434,7 +434,8 @@ namespace
             const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
               deadline - now
             ).count();
-            waitTimeout = remaining >= MAXDWORD ? MAXDWORD : DWORD(remaining + 1);
+            const auto rounded = remaining + 1;
+            waitTimeout = DWORD(rounded > timeout ? timeout : rounded);
           }
         }
 
