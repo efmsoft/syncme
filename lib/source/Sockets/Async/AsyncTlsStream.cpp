@@ -242,6 +242,12 @@ bool AsyncTlsStream::StartRead(IO::BufferPtr buffer)
   if (Removing || TlsReadClosed || PlainReadPending)
     return false;
 
+  if (IsHandshakeTerminated())
+  {
+    LastError = "read refused: the TLS handshake ended unfinished";
+    return false;
+  }
+
   if (buffer == nullptr || buffer->empty())
     return false;
 
@@ -257,6 +263,12 @@ bool AsyncTlsStream::StartWrite(const BufferChain& buffers)
 
   if (Removing || PlainWritePending || buffers.IsEmpty())
     return false;
+
+  if (IsHandshakeTerminated())
+  {
+    LastError = "write refused: the TLS handshake ended unfinished";
+    return false;
+  }
 
   PlainWriteBuffers = buffers;
   PlainWriteOffset = 0;
@@ -276,6 +288,14 @@ bool AsyncTlsStream::ShutdownSend()
 
   if (ShutdownCompleted)
     return true;
+
+  // no TLS session to shut down: the owner closes the connection at once
+  // instead of waiting for a shutdown that can never complete
+  if (IsHandshakeTerminated())
+  {
+    LastError = "shutdown refused: the TLS handshake ended unfinished";
+    return false;
+  }
 
   ShutdownPending = true;
   return Drive();
@@ -746,7 +766,8 @@ bool AsyncTlsStream::Drive()
       if (LowerReadClosed)
         return QueueHandshakeReadClosed("lower read closed during TLS handshake");
 
-      // the peer's close_notify ended the handshake: nothing more to read
+      // the handshake ended unfinished (an error or the peer's
+      // close_notify): nothing more to read for it
       if (HandshakeResultQueued)
         return true;
 
@@ -786,8 +807,8 @@ bool AsyncTlsStream::DriveHandshake()
   if (HandshakeCompleted)
     return true;
 
-  // the handshake already ended unfinished (the peer closed it) and its
-  // owner has been told
+  // the handshake already ended unfinished (an error or a peer close) and
+  // its owner has been told
   if (HandshakeResultQueued)
     return true;
 
@@ -1199,6 +1220,12 @@ bool AsyncTlsStream::QueueResult(
 
 bool AsyncTlsStream::QueueError(int error, ErrorOrigin origin)
 {
+  // An error before the handshake finished ends it, like a peer close does:
+  // a later lower completion must not drive it again and report a second
+  // terminal result.
+  if (HandshakeStarted && !HandshakeCompleted)
+    HandshakeResultQueued = true;
+
   if (error == 0)
     error = SSL_ERROR_SSL;
 
@@ -1233,6 +1260,13 @@ bool AsyncTlsStream::QueueHandshakeReadClosed(const char* reason)
   HandshakeResultQueued = true;
   LastError = reason;
   return QueueReadClosed();
+}
+
+bool AsyncTlsStream::IsHandshakeTerminated() const
+{
+  // started, never completed, and its unfinished end (an error or a peer
+  // close) already reported to the owner
+  return HandshakeStarted && !HandshakeCompleted && HandshakeResultQueued;
 }
 
 bool AsyncTlsStream::IsWantIO(int error) const

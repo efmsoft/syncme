@@ -619,6 +619,118 @@ TEST(async_tls_stream, a_close_notify_mid_handshake_is_a_read_closed_result)
   EXPECT_FALSE(rig.Tls->HasPendingResult());
 }
 
+namespace
+{
+  // completes the client's first lower write (the ClientHello) without
+  // handing it to the server
+  bool CompleteFirstWrite(Rig& rig)
+  {
+    Result written;
+    written.Stream = rig.Lower;
+    written.Context = &rig.Marker;
+    written.Op = Operation::Write;
+    written.Bytes = rig.Lower->Writes[0].Bytes.size();
+    return rig.Tls->ProcessLowerResult(written);
+  }
+
+  void ExpectNoIoAfterTheHandshakeEnded(Rig& rig)
+  {
+    auto buffer = std::make_shared<IO::Buffer>(64, '.');
+    EXPECT_FALSE(rig.Tls->StartRead(buffer));
+
+    BufferChain chain;
+    EXPECT_TRUE(chain.Add(std::make_shared<IO::Buffer>(16, 'x')));
+    EXPECT_FALSE(rig.Tls->StartWrite(chain));
+
+    EXPECT_FALSE(rig.Tls->ShutdownSend());
+    EXPECT_FALSE(rig.Tls->HasPendingResult());
+  }
+}
+
+TEST(async_tls_stream, a_transport_error_mid_handshake_is_the_only_result_even_after_a_late_write_completion)
+{
+  Rig rig;
+  ASSERT_TRUE(rig.Tls->StartHandshake());
+  ASSERT_EQ(rig.Lower->Writes.size(), 1u);
+  rig.Lower->PendingRead.reset();
+
+  Result failed;
+  failed.Stream = rig.Lower;
+  failed.Context = &rig.Marker;
+  failed.Op = Operation::Error;
+  failed.Error = 104;
+  failed.Origin = ErrorOrigin::Transport;
+  ASSERT_TRUE(rig.Tls->ProcessLowerResult(failed));
+
+  Result result;
+  ASSERT_TRUE(rig.Tls->PopPendingResult(result));
+  EXPECT_EQ(result.Op, Operation::Error);
+  EXPECT_EQ(result.Origin, ErrorOrigin::Transport);
+
+  ASSERT_TRUE(CompleteFirstWrite(rig));
+  EXPECT_FALSE(rig.Tls->HasPendingResult());
+  EXPECT_EQ(rig.Lower->PendingRead, nullptr);
+
+  ExpectNoIoAfterTheHandshakeEnded(rig);
+}
+
+TEST(async_tls_stream, a_tls_error_mid_handshake_is_the_only_result_even_after_a_late_write_completion)
+{
+  Rig rig;
+  ASSERT_TRUE(rig.Tls->StartHandshake());
+  ASSERT_EQ(rig.Lower->Writes.size(), 1u);
+
+  const std::string garbage(64, '\x17');
+  ASSERT_TRUE(rig.Deliver(garbage));
+
+  Result result;
+  ASSERT_TRUE(rig.Tls->PopPendingResult(result));
+  EXPECT_EQ(result.Op, Operation::Error);
+  EXPECT_EQ(result.Origin, ErrorOrigin::Tls);
+
+  ASSERT_TRUE(CompleteFirstWrite(rig));
+  EXPECT_FALSE(rig.Tls->HasPendingResult());
+  EXPECT_EQ(rig.Lower->PendingRead, nullptr);
+
+  Result closed;
+  closed.Stream = rig.Lower;
+  closed.Context = &rig.Marker;
+  closed.Op = Operation::ReadClosed;
+  ASSERT_TRUE(rig.Tls->ProcessLowerResult(closed));
+  EXPECT_FALSE(rig.Tls->HasPendingResult());
+
+  ExpectNoIoAfterTheHandshakeEnded(rig);
+}
+
+TEST(async_tls_stream, no_io_is_accepted_after_a_close_notify_mid_handshake)
+{
+  Rig rig;
+  ASSERT_TRUE(rig.Tls->StartHandshake());
+
+  const std::string closeNotify("\x15\x03\x03\x00\x02\x01\x00", 7);
+  ASSERT_TRUE(rig.Deliver(closeNotify));
+
+  Result result;
+  ASSERT_TRUE(rig.Tls->PopPendingResult(result));
+  ASSERT_EQ(result.Op, Operation::ReadClosed);
+
+  const size_t writes = rig.Lower->Writes.size();
+  ExpectNoIoAfterTheHandshakeEnded(rig);
+  EXPECT_EQ(rig.Lower->Writes.size(), writes);
+}
+
+TEST(async_tls_stream, io_is_accepted_while_the_handshake_is_still_running)
+{
+  Rig rig;
+  ASSERT_TRUE(rig.Tls->StartHandshake());
+
+  auto buffer = std::make_shared<IO::Buffer>(64, '.');
+  EXPECT_TRUE(rig.Tls->StartRead(buffer));
+
+  rig.Pump();
+  ASSERT_TRUE(rig.Tls->IsHandshakeCompleted());
+}
+
 TEST(async_tls_stream, non_error_results_have_no_error_origin)
 {
   Rig rig;
