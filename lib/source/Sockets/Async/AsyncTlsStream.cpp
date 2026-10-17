@@ -505,6 +505,11 @@ bool AsyncTlsStream::ProcessLowerResult(const Result& result)
       return QueueError(SSL_ERROR_SYSCALL);
     }
 
+    // The handshake has no plaintext read to fail, but it can never finish
+    // now: Drive() reports that to the owner.
+    if (HandshakeStarted && !HandshakeCompleted)
+      return Drive();
+
     if (!PlainReadPending)
       return true;
 
@@ -737,6 +742,9 @@ bool AsyncTlsStream::Drive()
     {
       if (!DrainEncryptedOutput())
         return false;
+
+      if (LowerReadClosed)
+        return QueueHandshakeReadClosed();
 
       return StartLowerRead();
     }
@@ -1193,6 +1201,19 @@ bool AsyncTlsStream::QueueHandshakeCompleted()
 
   HandshakeResultQueued = true;
   return QueueResult(Operation::Handshake, nullptr, 0, 0);
+}
+
+bool AsyncTlsStream::QueueHandshakeReadClosed()
+{
+  // The peer closed before the handshake finished and nothing more can
+  // arrive to finish it: without this result the owner would only learn
+  // about it from its handshake timeout.
+  if (HandshakeResultQueued)
+    return true;
+
+  HandshakeResultQueued = true;
+  LastError = "lower read closed during TLS handshake";
+  return QueueReadClosed();
 }
 
 bool AsyncTlsStream::IsWantIO(int error) const

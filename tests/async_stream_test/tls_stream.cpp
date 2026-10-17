@@ -478,6 +478,88 @@ TEST(async_tls_stream, a_protocol_error_is_an_error_result)
   EXPECT_EQ(result.Stream, rig.Tls);
 }
 
+TEST(async_tls_stream, the_peer_closing_mid_handshake_is_a_read_closed_result)
+{
+  Rig rig;
+  ASSERT_TRUE(rig.Tls->StartHandshake());
+
+  // the ClientHello is on its way and the client waits for the answer
+  ASSERT_EQ(rig.Lower->Writes.size(), 1u);
+  ASSERT_NE(rig.Lower->PendingRead, nullptr);
+  EXPECT_FALSE(rig.Tls->HasPendingResult());
+
+  rig.Lower->PendingRead.reset();
+
+  Result closed;
+  closed.Stream = rig.Lower;
+  closed.Context = &rig.Marker;
+  closed.Op = Operation::ReadClosed;
+  ASSERT_TRUE(rig.Tls->ProcessLowerResult(closed));
+
+  Result result;
+  ASSERT_TRUE(rig.Tls->PopPendingResult(result));
+  EXPECT_EQ(result.Op, Operation::ReadClosed);
+  EXPECT_EQ(result.Error, 0);
+  EXPECT_EQ(result.Buffer, nullptr);
+  EXPECT_EQ(result.Context, &rig.Marker);
+  EXPECT_EQ(result.Stream, rig.Tls);
+  EXPECT_FALSE(rig.Tls->IsHandshakeCompleted());
+  EXPECT_EQ(
+    rig.Tls->GetDiagnostics().LastError
+    , "lower read closed during TLS handshake"
+  );
+
+  // the ClientHello write completing afterwards drives the stream again,
+  // which must not report the close a second time
+  Result written;
+  written.Stream = rig.Lower;
+  written.Context = &rig.Marker;
+  written.Op = Operation::Write;
+  written.Bytes = rig.Lower->Writes[0].Bytes.size();
+  ASSERT_TRUE(rig.Tls->ProcessLowerResult(written));
+
+  EXPECT_FALSE(rig.Tls->HasPendingResult());
+  EXPECT_EQ(rig.Lower->PendingRead, nullptr);
+}
+
+TEST(async_tls_stream, a_handshake_started_after_the_peer_closed_is_a_read_closed_result)
+{
+  Rig rig;
+
+  Result closed;
+  closed.Stream = rig.Lower;
+  closed.Context = &rig.Marker;
+  closed.Op = Operation::ReadClosed;
+  ASSERT_TRUE(rig.Tls->ProcessLowerResult(closed));
+  EXPECT_FALSE(rig.Tls->HasPendingResult());
+
+  ASSERT_TRUE(rig.Tls->StartHandshake());
+
+  Result result;
+  ASSERT_TRUE(rig.Tls->PopPendingResult(result));
+  EXPECT_EQ(result.Op, Operation::ReadClosed);
+  EXPECT_FALSE(rig.Tls->HasPendingResult());
+  EXPECT_EQ(rig.Lower->PendingRead, nullptr);
+}
+
+TEST(async_tls_stream, the_peer_closing_after_the_handshake_with_no_read_pending_is_quiet)
+{
+  Rig rig;
+  rig.Handshake();
+
+  Result result;
+  ASSERT_TRUE(rig.Tls->PopPendingResult(result));
+  ASSERT_EQ(result.Op, Operation::Handshake);
+
+  Result closed;
+  closed.Stream = rig.Lower;
+  closed.Context = &rig.Marker;
+  closed.Op = Operation::ReadClosed;
+  ASSERT_TRUE(rig.Tls->ProcessLowerResult(closed));
+
+  EXPECT_FALSE(rig.Tls->HasPendingResult());
+}
+
 TEST(async_tls_stream, the_owner_is_told_once_per_drain)
 {
   Rig rig;

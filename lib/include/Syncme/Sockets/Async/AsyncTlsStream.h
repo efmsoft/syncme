@@ -173,6 +173,7 @@ namespace Syncme
         bool QueueError(int error);
         bool QueueReadClosed();
         bool QueueHandshakeCompleted();
+        bool QueueHandshakeReadClosed();
         void NotifyResultReady();
         bool IsWantIO(int error) const;
         int GetSslError(int rc) const;
