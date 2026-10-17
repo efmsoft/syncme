@@ -502,7 +502,7 @@ bool AsyncTlsStream::ProcessLowerResult(const Result& result)
       PlainReadPending = false;
       PlainReadBuffer.reset();
       ResetPlainWrite();
-      return QueueError(SSL_ERROR_SYSCALL);
+      return QueueError(SSL_ERROR_SYSCALL, ErrorOrigin::Transport);
     }
 
     // The handshake has no plaintext read to fail, but it can never finish
@@ -527,7 +527,7 @@ bool AsyncTlsStream::ProcessLowerResult(const Result& result)
     // always human-readable regardless of which path produced it.
     LastError = "lower stream error=" + std::to_string(result.Error)
       + ": " + OSERR(result.Error);
-    return QueueError(result.Error);
+    return QueueError(result.Error, ErrorOrigin::Transport);
 
   default:
     break;
@@ -744,7 +744,11 @@ bool AsyncTlsStream::Drive()
         return false;
 
       if (LowerReadClosed)
-        return QueueHandshakeReadClosed();
+        return QueueHandshakeReadClosed("lower read closed during TLS handshake");
+
+      // the peer's close_notify ended the handshake: nothing more to read
+      if (HandshakeResultQueued)
+        return true;
 
       return StartLowerRead();
     }
@@ -782,6 +786,11 @@ bool AsyncTlsStream::DriveHandshake()
   if (HandshakeCompleted)
     return true;
 
+  // the handshake already ended unfinished (the peer closed it) and its
+  // owner has been told
+  if (HandshakeResultQueued)
+    return true;
+
   ERR_clear_error();
   int rc = SSL_do_handshake(Ssl);
   if (rc == 1)
@@ -795,8 +804,16 @@ bool AsyncTlsStream::DriveHandshake()
   if (IsWantIO(error))
     return true;
 
+  // close_notify before the handshake finished: the peer shut the
+  // connection down, it did not fail the handshake
+  if (error == SSL_ERROR_ZERO_RETURN)
+  {
+    TlsReadClosed = true;
+    return QueueHandshakeReadClosed("peer sent close_notify during TLS handshake");
+  }
+
   SetSslError("SSL_do_handshake", rc, error);
-  return QueueError(ConvertSslError(error));
+  return QueueError(ConvertSslError(error), ErrorOrigin::Tls);
 }
 
 bool AsyncTlsStream::DrivePlainRead()
@@ -846,7 +863,7 @@ bool AsyncTlsStream::DrivePlainRead()
   SetSslError("SSL_read", rc, error);
   PlainReadBuffer.reset();
   PlainReadPending = false;
-  return QueueError(ConvertSslError(error));
+  return QueueError(ConvertSslError(error), ErrorOrigin::Tls);
 }
 
 bool AsyncTlsStream::DrivePlainWrite()
@@ -906,7 +923,7 @@ bool AsyncTlsStream::DrivePlainWrite()
 
       SetSslError("SSL_write", rc, error);
       ResetPlainWrite();
-      return QueueError(ConvertSslError(error));
+      return QueueError(ConvertSslError(error), ErrorOrigin::Tls);
     }
   }
 
@@ -955,7 +972,7 @@ bool AsyncTlsStream::DriveShutdown()
     return true;
 
   SetSslError("SSL_shutdown", rc, error);
-  return QueueError(ConvertSslError(error));
+  return QueueError(ConvertSslError(error), ErrorOrigin::Tls);
 }
 
 bool AsyncTlsStream::DrainEncryptedOutput()
@@ -1161,6 +1178,7 @@ bool AsyncTlsStream::QueueResult(
   , IO::BufferPtr buffer
   , size_t bytes
   , int error
+  , ErrorOrigin origin
 )
 {
   Result result;
@@ -1170,6 +1188,7 @@ bool AsyncTlsStream::QueueResult(
   result.Buffer = std::move(buffer);
   result.Bytes = bytes;
   result.Error = error;
+  result.Origin = origin;
 
   const size_t retained = BufferCapacity(result.Buffer);
   PendingResults.push_back(std::move(result));
@@ -1178,7 +1197,7 @@ bool AsyncTlsStream::QueueResult(
   return true;
 }
 
-bool AsyncTlsStream::QueueError(int error)
+bool AsyncTlsStream::QueueError(int error, ErrorOrigin origin)
 {
   if (error == 0)
     error = SSL_ERROR_SSL;
@@ -1186,7 +1205,7 @@ bool AsyncTlsStream::QueueError(int error)
   if (LastError.empty())
     LastError = "TLS protocol error=" + std::to_string(error);
 
-  return QueueResult(Operation::Error, nullptr, 0, error);
+  return QueueResult(Operation::Error, nullptr, 0, error, origin);
 }
 
 bool AsyncTlsStream::QueueReadClosed()
@@ -1203,7 +1222,7 @@ bool AsyncTlsStream::QueueHandshakeCompleted()
   return QueueResult(Operation::Handshake, nullptr, 0, 0);
 }
 
-bool AsyncTlsStream::QueueHandshakeReadClosed()
+bool AsyncTlsStream::QueueHandshakeReadClosed(const char* reason)
 {
   // The peer closed before the handshake finished and nothing more can
   // arrive to finish it: without this result the owner would only learn
@@ -1212,7 +1231,7 @@ bool AsyncTlsStream::QueueHandshakeReadClosed()
     return true;
 
   HandshakeResultQueued = true;
-  LastError = "lower read closed during TLS handshake";
+  LastError = reason;
   return QueueReadClosed();
 }
 

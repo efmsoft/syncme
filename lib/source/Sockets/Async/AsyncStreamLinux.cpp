@@ -589,6 +589,9 @@ namespace
       result.Buffer = std::move(buffer);
       result.Bytes = bytes;
       result.Error = error;
+      if (op == Operation::Error)
+        result.Origin = ErrorOrigin::Transport;
+
       PushPendingResultLocked(std::move(result));
     }
 

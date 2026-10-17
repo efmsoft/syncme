@@ -32,6 +32,18 @@ namespace Syncme
         Stop
       };
 
+      // Where the code of an Operation::Error result comes from. A socket
+      // stream reports an OS error of its socket (Transport); a TLS stream
+      // reports either an SSL_ERROR_* value (Tls) or the OS error of the
+      // transport under it (Transport). The two code spaces overlap
+      // (SSL_ERROR_SYSCALL == EIO on Linux), so the code alone cannot tell.
+      enum class ErrorOrigin
+      {
+        None,
+        Transport,
+        Tls
+      };
+
       struct Result
       {
         AsyncStreamPtr Stream;
@@ -40,6 +52,7 @@ namespace Syncme
         IO::BufferPtr Buffer;
         size_t Bytes;
         int Error;
+        ErrorOrigin Origin;
 
         SINCMELNK Result();
       };

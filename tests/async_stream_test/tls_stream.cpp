@@ -472,6 +472,7 @@ TEST(async_tls_stream, a_protocol_error_is_an_error_result)
   ASSERT_TRUE(rig.Tls->PopPendingResult(result));
   EXPECT_EQ(result.Op, Operation::Error);
   EXPECT_EQ(result.Error, SSL_ERROR_SSL);
+  EXPECT_EQ(result.Origin, ErrorOrigin::Tls);
   EXPECT_EQ(result.Bytes, 0u);
   EXPECT_EQ(result.Buffer, nullptr);
   EXPECT_EQ(result.Context, &rig.Marker);
@@ -540,6 +541,93 @@ TEST(async_tls_stream, a_handshake_started_after_the_peer_closed_is_a_read_close
   EXPECT_EQ(result.Op, Operation::ReadClosed);
   EXPECT_FALSE(rig.Tls->HasPendingResult());
   EXPECT_EQ(rig.Lower->PendingRead, nullptr);
+}
+
+TEST(async_tls_stream, a_transport_error_mid_handshake_is_an_error_of_transport_origin)
+{
+  Rig rig;
+  ASSERT_TRUE(rig.Tls->StartHandshake());
+  ASSERT_NE(rig.Lower->PendingRead, nullptr);
+  rig.Lower->PendingRead.reset();
+
+  // an OS error whose code is also SSL_ERROR_SYSCALL's: only the origin
+  // tells them apart
+  Result failed;
+  failed.Stream = rig.Lower;
+  failed.Context = &rig.Marker;
+  failed.Op = Operation::Error;
+  failed.Error = SSL_ERROR_SYSCALL;
+  failed.Origin = ErrorOrigin::Transport;
+  ASSERT_TRUE(rig.Tls->ProcessLowerResult(failed));
+
+  Result result;
+  ASSERT_TRUE(rig.Tls->PopPendingResult(result));
+  EXPECT_EQ(result.Op, Operation::Error);
+  EXPECT_EQ(result.Error, SSL_ERROR_SYSCALL);
+  EXPECT_EQ(result.Origin, ErrorOrigin::Transport);
+  EXPECT_EQ(result.Stream, rig.Tls);
+}
+
+TEST(async_tls_stream, a_tls_alert_mid_handshake_is_an_error_of_tls_origin)
+{
+  Rig rig;
+  ASSERT_TRUE(rig.Tls->StartHandshake());
+
+  // not a TLS record where the ServerHello should be
+  const std::string garbage(64, '\x17');
+  ASSERT_TRUE(rig.Deliver(garbage));
+
+  Result result;
+  ASSERT_TRUE(rig.Tls->PopPendingResult(result));
+  EXPECT_EQ(result.Op, Operation::Error);
+  EXPECT_EQ(result.Origin, ErrorOrigin::Tls);
+  EXPECT_FALSE(rig.Tls->IsHandshakeCompleted());
+}
+
+TEST(async_tls_stream, a_close_notify_mid_handshake_is_a_read_closed_result)
+{
+  Rig rig;
+  ASSERT_TRUE(rig.Tls->StartHandshake());
+
+  // a plaintext warning-level close_notify alert where the ServerHello
+  // should be
+  const std::string closeNotify("\x15\x03\x03\x00\x02\x01\x00", 7);
+  ASSERT_TRUE(rig.Deliver(closeNotify));
+
+  Result result;
+  ASSERT_TRUE(rig.Tls->PopPendingResult(result));
+  EXPECT_EQ(result.Op, Operation::ReadClosed);
+  EXPECT_EQ(result.Error, 0);
+  EXPECT_EQ(result.Origin, ErrorOrigin::None);
+  EXPECT_EQ(result.Stream, rig.Tls);
+  EXPECT_FALSE(rig.Tls->IsHandshakeCompleted());
+
+  const auto diagnostics = rig.Tls->GetDiagnostics();
+  EXPECT_TRUE(diagnostics.TlsReadClosed);
+  EXPECT_EQ(diagnostics.LastError, "peer sent close_notify during TLS handshake");
+
+  // the handshake is over: no further read is started and nothing more is
+  // reported, not even when the lower stream closes afterwards
+  EXPECT_FALSE(rig.Tls->HasPendingResult());
+  EXPECT_EQ(rig.Lower->PendingRead, nullptr);
+
+  Result closed;
+  closed.Stream = rig.Lower;
+  closed.Context = &rig.Marker;
+  closed.Op = Operation::ReadClosed;
+  ASSERT_TRUE(rig.Tls->ProcessLowerResult(closed));
+  EXPECT_FALSE(rig.Tls->HasPendingResult());
+}
+
+TEST(async_tls_stream, non_error_results_have_no_error_origin)
+{
+  Rig rig;
+  rig.Handshake();
+
+  Result result;
+  ASSERT_TRUE(rig.Tls->PopPendingResult(result));
+  EXPECT_EQ(result.Op, Operation::Handshake);
+  EXPECT_EQ(result.Origin, ErrorOrigin::None);
 }
 
 TEST(async_tls_stream, the_peer_closing_after_the_handshake_with_no_read_pending_is_quiet)

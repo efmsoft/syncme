@@ -7,6 +7,7 @@ Result::Result()
   , Op(Operation::None)
   , Bytes(0)
   , Error(0)
+  , Origin(ErrorOrigin::None)
 {
 }
 

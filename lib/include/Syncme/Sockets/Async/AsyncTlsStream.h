@@ -168,12 +168,13 @@ namespace Syncme
           , IO::BufferPtr buffer
           , size_t bytes
           , int error
+          , ErrorOrigin origin = ErrorOrigin::None
         );
 
-        bool QueueError(int error);
+        bool QueueError(int error, ErrorOrigin origin);
         bool QueueReadClosed();
         bool QueueHandshakeCompleted();
-        bool QueueHandshakeReadClosed();
+        bool QueueHandshakeReadClosed(const char* reason);
         void NotifyResultReady();
         bool IsWantIO(int error) const;
         int GetSslError(int rc) const;
