@@ -338,6 +338,10 @@ bool AsyncTlsStream::StartHandshake()
     return false;
   }
 
+  // its terminal result is already with the owner; LastError keeps its cause
+  if (IsHandshakeTerminated())
+    return false;
+
   HandshakeStarted = true;
   return Drive();
 }
@@ -540,6 +544,11 @@ bool AsyncTlsStream::ProcessLowerResult(const Result& result)
   case Operation::Error:
     LowerReadPending = false;
     LowerReadClosed = true;
+
+    // the unfinished handshake has already been reported: keep its cause
+    if (IsHandshakeTerminated())
+      return true;
+
     // result.Error is an OS error code here (the lower transport is a raw
     // socket, never another AsyncTlsStream), unlike the SSL_ERROR_* values
     // QueueError() carries from the handshake/read/write/shutdown paths below
@@ -1220,11 +1229,16 @@ bool AsyncTlsStream::QueueResult(
 
 bool AsyncTlsStream::QueueError(int error, ErrorOrigin origin)
 {
-  // An error before the handshake finished ends it, like a peer close does:
-  // a later lower completion must not drive it again and report a second
-  // terminal result.
-  if (HandshakeStarted && !HandshakeCompleted)
+  // Until the handshake completes (also before it starts) the first error
+  // or peer close ends the stream for good: it is the one terminal result,
+  // and no later lower result, completion or call reports another.
+  if (!HandshakeCompleted)
+  {
+    if (HandshakeResultQueued)
+      return true;
+
     HandshakeResultQueued = true;
+  }
 
   if (error == 0)
     error = SSL_ERROR_SSL;
@@ -1264,9 +1278,11 @@ bool AsyncTlsStream::QueueHandshakeReadClosed(const char* reason)
 
 bool AsyncTlsStream::IsHandshakeTerminated() const
 {
-  // started, never completed, and its unfinished end (an error or a peer
-  // close) already reported to the owner
-  return HandshakeStarted && !HandshakeCompleted && HandshakeResultQueued;
+  std::lock_guard<std::recursive_mutex> guard(Lock);
+
+  // never completed, and its unfinished end (an error or a peer close, which
+  // may come even before the handshake starts) already reported to the owner
+  return !HandshakeCompleted && HandshakeResultQueued;
 }
 
 bool AsyncTlsStream::IsWantIO(int error) const

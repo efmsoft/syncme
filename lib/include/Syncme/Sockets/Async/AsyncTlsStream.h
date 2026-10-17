@@ -127,6 +127,9 @@ namespace Syncme
         SINCMELNK bool AdoptPendingLowerRead();
         SINCMELNK bool FeedEncryptedInput(const void* data, size_t bytes);
         SINCMELNK bool IsHandshakeCompleted() const;
+        // the handshake ended without completing and its one terminal result
+        // (an error or a peer close) has been queued for the owner
+        SINCMELNK bool IsHandshakeTerminated() const;
         SINCMELNK bool IsShutdownCompleted() const;
         SINCMELNK AsyncTlsStreamDiagnostics GetDiagnostics() const;
 
@@ -175,7 +178,6 @@ namespace Syncme
         bool QueueReadClosed();
         bool QueueHandshakeCompleted();
         bool QueueHandshakeReadClosed(const char* reason);
-        bool IsHandshakeTerminated() const;
         void NotifyResultReady();
         bool IsWantIO(int error) const;
         int GetSslError(int rc) const;
