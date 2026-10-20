@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 
 #include <Syncme/Api.h>
@@ -69,6 +70,15 @@ namespace Syncme
         SINCMELNK virtual bool StartWrite(const BufferChain& buffers) = 0;
         SINCMELNK virtual bool ShutdownSend() = 0;
         SINCMELNK virtual void Close() = 0;
+
+        // True only when progress is observable during a pending write.
+        // Whole-operation completion alone is insufficient for stall checks.
+        SINCMELNK virtual bool CanTrackWriteProgress() const;
+
+        // Uses the GetTimeInMillisec clock. Updated only when bytes are
+        // written to the transport, including partial writes. TLS exposes
+        // the underlying transport's progress. Zero means no progress yet.
+        SINCMELNK virtual uint64_t GetLastWriteProgressTime() const;
       };
 
       class AsyncEngine

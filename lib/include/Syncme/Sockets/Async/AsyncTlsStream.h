@@ -122,6 +122,8 @@ namespace Syncme
         SINCMELNK bool StartWrite(const BufferChain& buffers) override;
         SINCMELNK bool ShutdownSend() override;
         SINCMELNK void Close() override;
+        SINCMELNK bool CanTrackWriteProgress() const override;
+        SINCMELNK uint64_t GetLastWriteProgressTime() const override;
 
         SINCMELNK bool StartHandshake();
         SINCMELNK bool AdoptPendingLowerRead();

@@ -1,7 +1,10 @@
+#include <algorithm>
+#include <climits>
 #include <utility>
 
 #include <Syncme/Sockets/Async/AsyncWriteQueue.h>
 #include <Syncme/Sockets/Async/Counter.h>
+#include <Syncme/TickCount.h>
 
 using namespace Syncme::Sockets::Async;
 namespace IO = Syncme::Sockets::IO;
@@ -47,6 +50,7 @@ namespace
 AsyncWriteQueue::AsyncWriteQueue()
   : QueuedBytes(0)
   , WritePending(false)
+  , WriteStarted(0)
 {
 }
 
@@ -113,6 +117,7 @@ bool AsyncWriteQueue::OnWriteCompleted(size_t bytes, BufferChain* completed)
   QueuedBytes -= size;
   RemoveWriteQueueBytes(size);
   WritePending = false;
+  WriteStarted = 0;
 
   return StartNext();
 }
@@ -123,6 +128,7 @@ void AsyncWriteQueue::Clear()
   Queue.clear();
   QueuedBytes = 0;
   WritePending = false;
+  WriteStarted = 0;
 }
 
 bool AsyncWriteQueue::IsEmpty() const
@@ -150,6 +156,29 @@ size_t AsyncWriteQueue::Count() const
   return Queue.size();
 }
 
+int AsyncWriteQueue::GetStallTimeout(uint64_t now, uint64_t timeout) const
+{
+  // IOCP only reports whole WSASend completion, so it cannot distinguish
+  // a stalled pending write from a slow one. Keep the safeguard disabled
+  // unless the transport can expose partial progress (including via TLS).
+  if (timeout == 0 || IsIdle() || Stream == nullptr
+    || !Stream->CanTrackWriteProgress())
+  {
+    return -1;
+  }
+
+  uint64_t progress = WriteStarted;
+  if (Stream != nullptr)
+    progress = std::max(progress, Stream->GetLastWriteProgressTime());
+
+  const uint64_t elapsed = now >= progress ? now - progress : 0;
+  if (elapsed >= timeout)
+    return 0;
+
+  const uint64_t remaining = timeout - elapsed;
+  return remaining > uint64_t(INT_MAX) ? INT_MAX : int(remaining);
+}
+
 bool AsyncWriteQueue::StartNext()
 {
   if (WritePending || Queue.empty())
@@ -159,9 +188,11 @@ bool AsyncWriteQueue::StartNext()
     return false;
 
   WritePending = true;
+  WriteStarted = Syncme::GetTimeInMillisec();
   if (Stream->StartWrite(Queue.front()))
     return true;
 
   WritePending = false;
+  WriteStarted = 0;
   return false;
 }

@@ -15,6 +15,16 @@ AsyncStream::~AsyncStream()
 {
 }
 
+bool AsyncStream::CanTrackWriteProgress() const
+{
+  return false;
+}
+
+uint64_t AsyncStream::GetLastWriteProgressTime() const
+{
+  return 0;
+}
+
 AsyncEngine::~AsyncEngine()
 {
 }

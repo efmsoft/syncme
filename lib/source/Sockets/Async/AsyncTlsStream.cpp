@@ -235,6 +235,18 @@ void* AsyncTlsStream::GetContext() const
   return Context;
 }
 
+bool AsyncTlsStream::CanTrackWriteProgress() const
+{
+  return LowerStream != nullptr && LowerStream->CanTrackWriteProgress();
+}
+
+uint64_t AsyncTlsStream::GetLastWriteProgressTime() const
+{
+  // LowerStream is immutable after construction; reading its timestamp
+  // must not acquire the TLS state lock from a protocol timeout check.
+  return LowerStream != nullptr ? LowerStream->GetLastWriteProgressTime() : 0;
+}
+
 bool AsyncTlsStream::StartRead(IO::BufferPtr buffer)
 {
   std::lock_guard<std::recursive_mutex> guard(Lock);

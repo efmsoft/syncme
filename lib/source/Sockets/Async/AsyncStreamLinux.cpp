@@ -22,6 +22,7 @@
 #include <Syncme/Sockets/API.h>
 #include <Syncme/Sockets/Async/AsyncStream.h>
 #include <Syncme/Sockets/Async/Counter.h>
+#include <Syncme/TickCount.h>
 #include <Syncme/Sockets/Socket.h>
 
 using namespace Syncme;
@@ -108,6 +109,7 @@ namespace
     BufferChain WriteBuffers;
     size_t WriteOffset;
     size_t WriteSize;
+    std::atomic<uint64_t> LastWriteProgressTime;
 
   public:
     LinuxAsyncStream(
@@ -124,6 +126,7 @@ namespace
       , ReadClosed(false)
       , WriteOffset(0)
       , WriteSize(0)
+      , LastWriteProgressTime(0)
     {
     }
 
@@ -153,6 +156,8 @@ namespace
     bool StartWrite(const BufferChain& buffers) override;
     bool ShutdownSend() override;
     void Close() override;
+    bool CanTrackWriteProgress() const override;
+    uint64_t GetLastWriteProgressTime() const override;
   };
 
   using LinuxAsyncStreamPtr = std::shared_ptr<LinuxAsyncStream>;
@@ -762,6 +767,10 @@ namespace
 
         if (n > 0)
         {
+          stream->LastWriteProgressTime.store(
+            Syncme::GetTimeInMillisec()
+            , std::memory_order_relaxed
+          );
           stream->WriteOffset += size_t(n);
           if (stream->WriteOffset >= stream->WriteSize)
           {
@@ -916,6 +925,16 @@ namespace
       return ev;
     }
   };
+
+  bool LinuxAsyncStream::CanTrackWriteProgress() const
+  {
+    return true;
+  }
+
+  uint64_t LinuxAsyncStream::GetLastWriteProgressTime() const
+  {
+    return LastWriteProgressTime.load(std::memory_order_relaxed);
+  }
 
   bool LinuxAsyncStream::StartRead(IO::BufferPtr buffer)
   {

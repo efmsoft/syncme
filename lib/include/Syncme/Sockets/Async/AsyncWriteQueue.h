@@ -19,6 +19,7 @@ namespace Syncme
         std::deque<BufferChain> Queue;
         size_t QueuedBytes;
         bool WritePending;
+        uint64_t WriteStarted;
 
       public:
         SINCMELNK AsyncWriteQueue();
@@ -47,6 +48,11 @@ namespace Syncme
         SINCMELNK bool IsIdle() const;
         SINCMELNK size_t Size() const;
         SINCMELNK size_t Count() const;
+
+        // Remaining time without transport write progress. Returns -1 when
+        // idle, disabled (timeout == 0), or partial progress is not observable;
+        // returns 0 when the write has stalled.
+        SINCMELNK int GetStallTimeout(uint64_t now, uint64_t timeout) const;
 
       private:
         bool StartNext();
