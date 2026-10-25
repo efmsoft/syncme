@@ -316,6 +316,10 @@ void Worker::EntryPoint()
       LogE("Worker task threw unknown exception");
     }
 
+    // Release the completed callback and its captured resources before this
+    // worker becomes idle and can receive another task.
+    Callback = nullptr;
+
     // We use IdleEvent to emulate thread handle. Clients can use it to 
     // check that thread is exited. So we return duplicated handle from Handle(),
     // signal event here. We have to create new event to work with new client

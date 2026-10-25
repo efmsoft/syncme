@@ -1,10 +1,14 @@
 #include <atomic>
+#include <chrono>
 #include <functional>
+#include <memory>
+#include <stdexcept>
 #include <thread>
 
 #include <gtest/gtest.h>
 #include <Syncme/Sync.h>
 #include <Syncme/ThreadPool/Pool.h>
+#include <Syncme/ThreadPool/Counter.h>
 
 using namespace Syncme;
 using namespace Syncme::ThreadPool;
@@ -112,5 +116,71 @@ TEST(Pool, worker_handle_close_while_running)
   EXPECT_EQ(completed.load(), ITERATIONS);
 
   CloseHandle(allCompleted);
+  tpool.Stop();
+}
+
+TEST(Pool, worker_releases_completed_callback)
+{
+  const int ITERATIONS = 100;
+
+  Pool tpool;
+  tpool.SetMaxThreads(1);
+  tpool.SetMaxUnusedThreads(1);
+
+  for (int i = 0; i < ITERATIONS; ++i)
+  {
+    std::weak_ptr<int> weak;
+    HEvent handle;
+
+    {
+      auto resource = std::make_shared<int>(i);
+      weak = resource;
+      handle = tpool.Run([resource]() {});
+    }
+
+    ASSERT_TRUE(handle);
+    ASSERT_EQ(WaitForSingleObject(handle, 5000), WAIT_RESULT::OBJECT_0);
+    EXPECT_TRUE(weak.expired()) << "Iteration " << i;
+
+    CloseHandle(handle);
+  }
+
+  for (int i = 0; i < 1000 && GetThreadsUnused() != 1; ++i)
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
+  ASSERT_EQ(GetThreadsUnused(), 1);
+  tpool.Stop();
+}
+
+TEST(Pool, worker_releases_throwing_callback)
+{
+  Pool tpool;
+  tpool.SetMaxThreads(1);
+  tpool.SetMaxUnusedThreads(1);
+
+  std::weak_ptr<int> weak;
+  HEvent handle;
+
+  {
+    auto resource = std::make_shared<int>(1);
+    weak = resource;
+    handle = tpool.Run(
+      [resource]()
+      {
+        throw std::runtime_error("expected test exception");
+      }
+    );
+  }
+
+  ASSERT_TRUE(handle);
+  ASSERT_EQ(WaitForSingleObject(handle, 5000), WAIT_RESULT::OBJECT_0);
+  EXPECT_TRUE(weak.expired());
+
+  CloseHandle(handle);
+
+  for (int i = 0; i < 1000 && GetThreadsUnused() != 1; ++i)
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
+  ASSERT_EQ(GetThreadsUnused(), 1);
   tpool.Stop();
 }
