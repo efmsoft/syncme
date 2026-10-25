@@ -1,4 +1,5 @@
 #include <cassert>
+#include <chrono>
 #include <Syncme/Sockets/OsslCompat.h>
 
 #include <openssl/err.h>
@@ -50,8 +51,8 @@ void SSLSocket::Shutdown()
   if (SSL_in_init(Ssl))
     return;
 
-  auto start = GetTimeInMillisec();
-  const uint64_t limit = 100;
+  const auto start = std::chrono::steady_clock::now();
+  const auto limit = std::chrono::milliseconds(100);
 
   const char* whoami = Pair->WhoAmI(this);
 
@@ -72,13 +73,18 @@ void SSLSocket::Shutdown()
   int n, e;
   while (true)
   {
-    auto spent = GetTimeInMillisec() - start;
-    if (spent >= limit)
+    if (std::chrono::steady_clock::now() - start >= limit)
       break;
 
     if (true)
     {
-      std::lock_guard<std::mutex> guard(SslLock);
+      // If SSL is in use, a close-notify must not block socket cleanup.
+      std::unique_lock<std::mutex> guard(SslLock, std::try_to_lock);
+      if (!guard.owns_lock())
+      {
+        LogW("%s: SSL shutdown skipped because SSL is busy", whoami);
+        break;
+      }
 
       n = SSL_shutdown(Ssl);
       e = SSL_get_error(Ssl, n);
@@ -119,7 +125,12 @@ void SSLSocket::Shutdown()
     {
       char buffer[64 * 1024]{};
 
-      std::lock_guard<std::mutex> guard(SslLock);
+      std::unique_lock<std::mutex> guard(SslLock, std::try_to_lock);
+      if (!guard.owns_lock())
+      {
+        LogW("%s: SSL shutdown read skipped because SSL is busy", whoami);
+        break;
+      }
       int n = SSL_read(Ssl, buffer, int(sizeof(buffer)));
 
       if (n > 0)

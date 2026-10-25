@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 
+#include <chrono>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -160,8 +161,8 @@ namespace Syncme
 
     Sockets::IO::Queue RxQueue;
     Sockets::IO::Queue TxQueue;
-    std::mutex IOLock;
-    std::mutex TxLock;
+    std::timed_mutex IOLock;
+    std::timed_mutex TxLock;
 
     bool FailLogged;
 
@@ -272,8 +273,14 @@ namespace Syncme
 #endif
 
   protected:
-    bool ReadIO(IOStat& stat);
-    bool WriteIO(IOStat& stat);
+    bool ReadIO(
+      IOStat& stat
+      , std::chrono::steady_clock::time_point deadline = {}
+    );
+    bool WriteIO(
+      IOStat& stat
+      , std::chrono::steady_clock::time_point deadline = {}
+    );
     void SetWaitDirection(SocketWaitDirection direction);
 
 #if SKTEPOLL

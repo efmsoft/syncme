@@ -88,13 +88,30 @@ void Socket::IoDebug(IOStat& stat, const char* op, int n, const char* tn)
 }
 #endif
 
-bool Socket::WriteIO(IOStat& stat)
+bool Socket::WriteIO(
+  IOStat& stat
+  , std::chrono::steady_clock::time_point deadline
+)
 {
   TimePoint t0;
-  std::lock_guard lock(TxLock);
+  std::unique_lock<std::timed_mutex> guard(TxLock, std::defer_lock);
+  if (deadline == std::chrono::steady_clock::time_point{})
+    guard.lock();
+  else if (!guard.try_lock_until(deadline))
+  {
+    SKT_SET_LAST_ERROR(TIMEOUT);
+    return false;
+  }
 
   for (;;)
   {
+    if (deadline != std::chrono::steady_clock::time_point{}
+      && std::chrono::steady_clock::now() >= deadline)
+    {
+      SKT_SET_LAST_ERROR(TIMEOUT);
+      break;
+    }
+
     auto b = TxQueue.PopFirst();
     if (b == nullptr)
       break;
@@ -150,13 +167,23 @@ bool Socket::WriteIO(IOStat& stat)
   return true;
 }
 
-bool Socket::ReadIO(IOStat& stat)
+bool Socket::ReadIO(
+  IOStat& stat
+  , std::chrono::steady_clock::time_point deadline
+)
 {
   TimePoint t0;
   char* rxBuffer = RxBuffer.get();
-  
+
   for (;;)
   {
+    if (deadline != std::chrono::steady_clock::time_point{}
+      && std::chrono::steady_clock::now() >= deadline)
+    {
+      SKT_SET_LAST_ERROR(TIMEOUT);
+      break;
+    }
+
     size_t readSize = Sockets::IO::BUFFER_SIZE;
     size_t available = 0;
 
@@ -212,7 +239,7 @@ bool Socket::ReadIO(IOStat& stat)
 
 bool Socket::ProcessIOEvents(int events, IOStat& stat)
 {
-  std::lock_guard<std::mutex> guard(IOLock);
+  std::lock_guard<std::timed_mutex> guard(IOLock);
 
   SKT_SET_LAST_ERROR(NONE);
 

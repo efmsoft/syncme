@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <Syncme/Logger/Log.h>
 #include <Syncme/Sockets/Socket.h>
 #include <Syncme/Sockets/SocketPair.h>
@@ -144,7 +145,17 @@ WAIT_RESULT Socket::FastWaitForMultipleObjects(int timeout, IOStat& stat)
 
 bool Socket::IO(int timeout, IOStat& stat, IOFlags flags)
 {
-  std::lock_guard<std::mutex> guard(IOLock);
+  const auto closeFlushDeadline = flags.f.Flush && timeout > 0
+    ? std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout)
+    : std::chrono::steady_clock::time_point{};
+  std::unique_lock<std::timed_mutex> guard(IOLock, std::defer_lock);
+  if (closeFlushDeadline == std::chrono::steady_clock::time_point{})
+    guard.lock();
+  else if (!guard.try_lock_until(closeFlushDeadline))
+  {
+    SKT_SET_LAST_ERROR(TIMEOUT);
+    return false;
+  }
 
   if (RxEvent == nullptr)
   {
@@ -164,12 +175,12 @@ bool Socket::IO(int timeout, IOStat& stat, IOFlags flags)
     if (Peer.Disconnected == false)
     {
       // Try to write as much as possible
-      if (WriteIO(stat) == false)
+      if (WriteIO(stat, closeFlushDeadline) == false)
         return false;
     }
 
     // Read as much as possible. 
-    if (ReadIO(stat) == false)
+    if (ReadIO(stat, closeFlushDeadline) == false)
       return false;
 
     // If peer is disconnected, we already drained socket
@@ -186,13 +197,24 @@ bool Socket::IO(int timeout, IOStat& stat, IOFlags flags)
     }
 
     // Return immediatelly if we read at least one packet
-    if (RxQueue.IsEmpty() == false && flags.f.ForceWait != true)
+    if (!flags.f.Flush && RxQueue.IsEmpty() == false && flags.f.ForceWait != true)
       return true;
 
     if (flags.f.Flush && TxQueue.IsEmpty())
       return true;
 
     uint32_t ms = CalculateTimeout(timeout, start, expired);
+    if (closeFlushDeadline != std::chrono::steady_clock::time_point{})
+    {
+      const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+        closeFlushDeadline - std::chrono::steady_clock::now()
+      ).count();
+      if (remaining <= 0)
+        expired = true;
+      else
+        ms = std::min(ms, uint32_t(remaining));
+    }
+
     if (expired)
     {
       SKT_SET_LAST_ERROR(TIMEOUT);

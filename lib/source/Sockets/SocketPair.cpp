@@ -1,4 +1,5 @@
 #include <cassert>
+#include <chrono>
 
 #include <Syncme/Sockets/API.h>
 #include <Syncme/Sockets/OsslCompat.h>
@@ -21,6 +22,7 @@ using namespace Syncme;
 using namespace Syncme::Implementation;
 
 const uint64_t PEER_DISCONNECT_TIMEOUT = 2000;
+const int GRACEFUL_CLOSE_TIMEOUT_MS = 120000;
 
 #ifdef USE_LOGME
 SUBSYSTEM SocketPair::SUBSID{ Logme::SID::Build("skt") };
@@ -116,19 +118,35 @@ void SocketPair::Close(SocketPairCloseMode mode)
 
   if (mode == SocketPairCloseMode::Graceful)
   {
-    if (Client)
+    // One deadline for both sides: failing to deliver queued data must not
+    // prevent socket cleanup. Use a monotonic clock to survive clock changes.
+    const auto deadline = std::chrono::steady_clock::now()
+      + std::chrono::milliseconds(GRACEFUL_CLOSE_TIMEOUT_MS);
+    auto flushAndShutdown = [&](const SocketPtr& socket, const char* name)
     {
-      LogI("Shutting down client");
-      Client->Flush();
-      Client->Shutdown();
-    }
+      if (!socket || !socket->IsAttached())
+        return;
 
-    if (Server)
-    {
-      LogI("Shutting down server");
-      Server->Flush();
-      Server->Shutdown();
-    }
+      if (!socket->TxQueue.IsEmpty())
+      {
+        const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+          deadline - std::chrono::steady_clock::now()
+        ).count();
+        const bool flushed = remaining > 0
+          && socket->Flush(static_cast<int>(remaining))
+          && socket->TxQueue.IsEmpty();
+        if (!flushed)
+          LogW("Graceful close: %s output not fully delivered", name);
+      }
+
+      // If flushing exhausted the total deadline, skip TLS close-notify and
+      // proceed to Close(). A failed delivery is preferable to a stalled close.
+      if (std::chrono::steady_clock::now() < deadline)
+        socket->Shutdown();
+    };
+
+    flushAndShutdown(Client, "client");
+    flushAndShutdown(Server, "server");
   }
   else
   {
