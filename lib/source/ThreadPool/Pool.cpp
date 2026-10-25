@@ -324,8 +324,15 @@ bool Pool::Run2(
       {
         if (Mode == OVERFLOW_MODE::FAIL)
         {
-          Errors++;
-          return true;
+          // Another worker may have claimed this task while we checked capacity.
+          // Reject only tasks that are still in the queue.
+          if (DequeueTask(task))
+          {
+            Errors++;
+            return true;
+          }
+
+          return false;
         }
 
         auto rc = WaitForMultipleObjects(ev, false);
