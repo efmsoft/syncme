@@ -459,7 +459,12 @@ static void YieldThread()
 
 TaskPtr Pool::CB_OnFree(Worker* p)
 {
-  if (TaskLock.try_lock())
+  // In WAIT mode, Pool::Run() can already be sleeping on FreeEvent for its
+  // queued task. Taking that task here would execute it without waking the
+  // caller, leaving Run() blocked forever. Return the worker to Unused and
+  // signal FreeEvent instead. FAIL mode keeps the direct handoff, since its
+  // caller does not wait on FreeEvent.
+  if (Mode != OVERFLOW_MODE::WAIT && TaskLock.try_lock())
   {
     if (Tasks.empty() == false)
     {
