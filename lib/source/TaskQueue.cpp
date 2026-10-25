@@ -65,7 +65,17 @@ ItemPtr Queue::Schedule(ItemPtr item)
     if (!stopped)
     {
       needWakeup = Items.empty();
-      Items.push_back(item);
+      try
+      {
+        Items.push_back(item);
+      }
+      catch (...)
+      {
+        // An unqueued item must not be destroyed with its completion event
+        // unsignalled: ~Item() waits for completion unconditionally.
+        item->Cancel();
+        throw;
+      }
     }
   }
 
