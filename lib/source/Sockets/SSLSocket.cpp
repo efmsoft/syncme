@@ -79,7 +79,7 @@ void SSLSocket::Shutdown()
     if (true)
     {
       // If SSL is in use, a close-notify must not block socket cleanup.
-      std::unique_lock<std::mutex> guard(SslLock, std::try_to_lock);
+      std::unique_lock<std::timed_mutex> guard(SslLock, std::try_to_lock);
       if (!guard.owns_lock())
       {
         LogW("%s: SSL shutdown skipped because SSL is busy", whoami);
@@ -125,7 +125,7 @@ void SSLSocket::Shutdown()
     {
       char buffer[64 * 1024]{};
 
-      std::unique_lock<std::mutex> guard(SslLock, std::try_to_lock);
+      std::unique_lock<std::timed_mutex> guard(SslLock, std::try_to_lock);
       if (!guard.owns_lock())
       {
         LogW("%s: SSL shutdown read skipped because SSL is busy", whoami);
@@ -156,7 +156,7 @@ void SSLSocket::Shutdown()
 
 int SSLSocket::ReadPending(void* buffer, size_t size, int i)
 {
-  std::lock_guard<std::mutex> guard(SslLock);
+  std::lock_guard<std::timed_mutex> guard(SslLock);
 
   if (i && !SSL_has_pending(Ssl))
     return 0;
@@ -183,7 +183,18 @@ int SSLSocket::ReadPending(void* buffer, size_t size, int i)
 
 int SSLSocket::InternalWrite(const void* buffer, size_t size, int timeout)
 {
-  std::lock_guard<std::mutex> guard(SslLock);
+  std::unique_lock<std::timed_mutex> guard(SslLock, std::defer_lock);
+  if (timeout > 0)
+  {
+    if (!guard.try_lock_for(std::chrono::milliseconds(timeout)))
+    {
+      SKT_SET_LAST_ERROR(TIMEOUT);
+      return -1;
+    }
+  }
+  else
+    guard.lock();
+
   ERR_clear_error();
 
   int n = SSL_write(Ssl, buffer, int(size));
@@ -198,7 +209,18 @@ int SSLSocket::InternalRead(void* buffer, size_t size, int timeout)
   if (n)
     return n;
 
-  std::lock_guard<std::mutex> guard(SslLock);
+  std::unique_lock<std::timed_mutex> guard(SslLock, std::defer_lock);
+  if (timeout > 0)
+  {
+    if (!guard.try_lock_for(std::chrono::milliseconds(timeout)))
+    {
+      SKT_SET_LAST_ERROR(TIMEOUT);
+      return -1;
+    }
+  }
+  else
+    guard.lock();
+
   ERR_clear_error();
 
   n = SSL_read(Ssl, buffer, int(size));

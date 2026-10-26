@@ -10,7 +10,7 @@ namespace Syncme
 {
   struct BIOSocket : public Socket
   {
-    std::mutex BioLock;
+    std::timed_mutex BioLock;
     BIO* Bio;
 
   public:

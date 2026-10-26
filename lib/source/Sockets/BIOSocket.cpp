@@ -1,4 +1,5 @@
 #include <cassert>
+#include <chrono>
 
 #include <Syncme/Logger/Log.h>
 #include <Syncme/Sockets/API.h>
@@ -58,7 +59,18 @@ int BIOSocket::InternalRead(void* buffer, size_t size, int timeout)
   if (n)
     return n;
 
-  std::lock_guard<std::mutex> guard(BioLock);
+  std::unique_lock<std::timed_mutex> guard(BioLock, std::defer_lock);
+  if (timeout > 0)
+  {
+    if (!guard.try_lock_for(std::chrono::milliseconds(timeout)))
+    {
+      SKT_SET_LAST_ERROR(TIMEOUT);
+      return -1;
+    }
+  }
+  else
+    guard.lock();
+
   n = BIO_read(Bio, buffer, int(size));
 
   if (n == 0)
@@ -93,7 +105,18 @@ int BIOSocket::InternalRead(void* buffer, size_t size, int timeout)
 
 int BIOSocket::InternalWrite(const void* buffer, size_t size, int timeout)
 {
-  std::lock_guard<std::mutex> guard(BioLock);
+  std::unique_lock<std::timed_mutex> guard(BioLock, std::defer_lock);
+  if (timeout > 0)
+  {
+    if (!guard.try_lock_for(std::chrono::milliseconds(timeout)))
+    {
+      SKT_SET_LAST_ERROR(TIMEOUT);
+      return -1;
+    }
+  }
+  else
+    guard.lock();
+
   int n = BIO_write(Bio, buffer, int(size));
 
   if (n == 0)

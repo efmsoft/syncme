@@ -12,7 +12,7 @@ namespace Syncme
 {
   struct SSLSocket : public Socket
   {
-    std::mutex SslLock;
+    std::timed_mutex SslLock;
     SSL* Ssl;
     bool AsyncTlsAutoHandshake;
     std::vector<uint8_t> AsyncTlsPrefetch;
