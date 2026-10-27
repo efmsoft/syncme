@@ -66,6 +66,7 @@ uint64_t Syncme::ThreadPool::GetCreateInvoke() { return CreateInvoke; }
 Pool::Pool()
   : MaxUnusedThreads(MAX_UNUSED_THREADS)
   , MaxThreads(MAX_THREADS)
+  , CreatingWorkers(0)
   , MaxIdleTime(MAX_IDLE_TIME)
   , Mode(OVERFLOW_MODE::WAIT)
   , Timer(CreateAutoResetTimer())
@@ -165,11 +166,11 @@ void Pool::StopUnused()
   Locked_StopExpired(nullptr);
 }
 
-WorkerPtr Pool::PopUnused(size_t& allCount)
+WorkerPtr Pool::PopUnused(size_t& allCount, bool sweepExpired)
 {
   LOCK_GUARD();
 
-  allCount = All.size();
+  allCount = All.size() + CreatingWorkers;
 
   if (Unused.empty())
     return WorkerPtr();
@@ -184,13 +185,33 @@ WorkerPtr Pool::PopUnused(size_t& allCount)
   // The management timer (CB_OnTimer) and CB_OnFree already reap expired idle
   // workers. Running a full Unused sweep here on every single dispatch showed up
   // as a hot path (shared_ptr churn under Lock), so throttle it.
-  if (LastExpireSweep.ElapsedSince() >= MaxIdleTime / 2)
+  if (sweepExpired && LastExpireSweep.ElapsedSince() >= MaxIdleTime / 2)
   {
     Locked_StopExpired(nullptr);
     LastExpireSweep = TimePoint();
   }
 
   return t;
+}
+
+bool Pool::ReserveWorkerSlot()
+{
+  LOCK_GUARD();
+
+  if (Stopping || All.size() + CreatingWorkers >= MaxThreads)
+    return false;
+
+  CreatingWorkers++;
+  return true;
+}
+
+void Pool::ReleaseWorkerSlot()
+{
+  LOCK_GUARD();
+
+  assert(CreatingWorkers > 0);
+  CreatingWorkers--;
+  SetEvent(FreeEvent);
 }
 
 void Pool::Push(WorkerList& list, WorkerPtr t)
@@ -303,6 +324,7 @@ bool Pool::Run2(
   , HEvent& h
   , TaskPtr task
   , TimePoint& t0
+  , bool waitForWorker
 )
 {
   if (pid)
@@ -311,21 +333,22 @@ bool Pool::Run2(
   WorkerPtr t;
   EventArray ev(StopEvent, FreeEvent);
 
-  DoCompact();
+  if (waitForWorker)
+    DoCompact();
 
   for (int loop = 0; !Stopping; ++loop)
   {
     size_t allSize{};
-    t = PopUnused(allSize);
+    t = PopUnused(allSize, waitForWorker);
 
     if (t == nullptr)
     {
       if (allSize >= MaxThreads)
       {
-        if (Mode == OVERFLOW_MODE::FAIL)
+        if (Mode == OVERFLOW_MODE::FAIL || !waitForWorker)
         {
-          // Another worker may have claimed this task while we checked capacity.
-          // Reject only tasks that are still in the queue.
+          // An immediate caller must never wait for FreeEvent. Reject only
+          // a task that is still queued; a worker may have claimed it.
           if (DequeueTask(task))
           {
             Errors++;
@@ -351,15 +374,57 @@ bool Pool::Run2(
         continue;
       }
 
-      if (DequeueTask(task) == false)
+      // PopUnused() and CreateWorker() are not one atomic operation.
+      // Reserve capacity before removing the task from its queue so
+      // concurrent submitters cannot all create a worker past MaxThreads.
+      if (!ReserveWorkerSlot())
+      {
+        if (!waitForWorker || Mode == OVERFLOW_MODE::FAIL)
+        {
+          if (DequeueTask(task))
+          {
+            Errors++;
+            return true;
+          }
+
+          return false;
+        }
+
+        continue;
+      }
+
+      bool dequeued = false;
+      try
+      {
+        dequeued = DequeueTask(task);
+        if (dequeued)
+          task->Worker = CreateWorker(t0, task->Callback, pid, task->ThreadHandle);
+      }
+      catch (...)
+      {
+        ReleaseWorkerSlot();
+        throw;
+      }
+
+      ReleaseWorkerSlot();
+      if (!dequeued)
         return false;
 
-      task->Worker = CreateWorker(t0, task->Callback, pid, task->ThreadHandle);
       CreateInvoke++;
       return true;
     }
 
     break;
+  }
+
+  // The pool may already be stopping before a worker was acquired.
+  // Do not dereference an empty WorkerPtr in that case.
+  if (!t)
+  {
+    if (DequeueTask(task))
+      return true;
+
+    return false;
   }
 
   if (DequeueTask(task) == false)
@@ -386,13 +451,23 @@ bool Pool::Run2(
 
 HEvent Pool::Run(TCallback cb, uint64_t* pid)
 {
+  return RunInternal(std::move(cb), pid, true);
+}
+
+HEvent Pool::TryRun(TCallback cb, uint64_t* pid)
+{
+  return RunInternal(std::move(cb), pid, false);
+}
+
+HEvent Pool::RunInternal(TCallback cb, uint64_t* pid, bool waitForWorker)
+{
   TimePoint t0;
-  TaskPtr task = QueueTask(cb);
+  TaskPtr task = QueueTask(std::move(cb));
 
   if (pid)
     *pid = 0;
 
-  bool dequeued = Run2(pid, task->ThreadHandle, task, t0);
+  bool dequeued = Run2(pid, task->ThreadHandle, task, t0, waitForWorker);
 
   TimePoint t1;
   LockedInRunInvoke += t1.ElapsedSince();

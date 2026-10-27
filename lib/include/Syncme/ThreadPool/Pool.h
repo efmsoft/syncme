@@ -26,6 +26,7 @@ namespace Syncme
     {
       size_t MaxUnusedThreads;
       size_t MaxThreads;
+      size_t CreatingWorkers;
       long MaxIdleTime;
       OVERFLOW_MODE Mode;
       SCompact Compact;
@@ -55,6 +56,7 @@ namespace Syncme
       SINCMELNK void Stop();
 
       SINCMELNK HEvent Run(TCallback cb, uint64_t* pid = nullptr);
+      SINCMELNK HEvent TryRun(TCallback cb, uint64_t* pid = nullptr);
 
       SINCMELNK void StopUnused();
 
@@ -79,7 +81,9 @@ namespace Syncme
       void DoCompact();
 
       void SetStopping();
-      WorkerPtr PopUnused(size_t& allCount);
+      WorkerPtr PopUnused(size_t& allCount, bool sweepExpired);
+      bool ReserveWorkerSlot();
+      void ReleaseWorkerSlot();
       void Push(WorkerList& list, WorkerPtr t);
 
       void Locked_StopExpired(Worker* caller);
@@ -95,7 +99,14 @@ namespace Syncme
       TaskPtr QueueTask(TCallback cb);
       bool DequeueTask(TaskPtr task);
 
-      bool Run2(uint64_t* pid, HEvent& h, TaskPtr task, TimePoint& t0);
+      HEvent RunInternal(TCallback cb, uint64_t* pid, bool waitForWorker);
+      bool Run2(
+        uint64_t* pid
+        , HEvent& h
+        , TaskPtr task
+        , TimePoint& t0
+        , bool waitForWorker
+      );
     };
   }
 }
